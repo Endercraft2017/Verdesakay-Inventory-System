@@ -23,7 +23,7 @@ try{
  browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/chromium',args:['--no-sandbox'],ignoreDefaultArgs:['--hide-scrollbars']});
  const context=await browser.newContext({viewport:{width:1200,height:1350},timezoneId:'Asia/Manila'}),page=await context.newPage();
  page.on('pageerror',e=>report.errors.push(e.message));page.on('request',r=>{if(!r.url().startsWith(url)&&!r.url().startsWith('about:')&&!r.url().startsWith('data:')&&!r.url().startsWith('blob:'+url))report.errors.push('Unexpected external request: '+r.url());});
- await page.goto(url);const child=()=>page.frames().find(f=>f.name()==='after');
+ await page.goto(url+'?review=batch');const child=()=>page.frames().find(f=>f.name()==='after');
  // iframe IDs do not create a frame name in all browsers: derive from its actual element.
  const frame=async()=>await(await page.locator('#after').elementHandle()).contentFrame();
  async function ready(){const f=await frame();const generation=await page.evaluate(()=>__scratchReview.generation());await expect.poll(()=>f.evaluate(g=>!!window.__scratchBooted&&window.__SCRATCH_CONFIG__.generation===g,generation).catch(()=>false)).toBe(true);return f;}
@@ -75,7 +75,7 @@ try{
  assert.deepEqual(report.errors,[]);
  report.backend=await verifyBackend();
  // Evidence becomes part of the same downloadable HTML. Application source bytes are unchanged.
- fs.writeFileSync(path.join(output,'evidence/results.json'),JSON.stringify(report,null,2));
+ fs.writeFileSync(path.join(output,'evidence/results.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(root,'work','chunk28-batch-regression.json'),JSON.stringify(report,null,2));
  const screenshots=['finished-compact','image-only-mid-swipe','compact-photo-layout','limit-feedback','jo-inline-counter','ckd-inline-counter','so-inline-counter','centered-dots','stable-build-cover','ratio-list-320x640','ratio-photos-390x780','full-red-limit-dark','centered-stretch-squash','settled-number-twelve','all-dots-mid-swipe','compact-preparation-so-390x780','compact-preparation-jo-320x640','independent-floating-quick-action','list-zero-limit-dark','list-zero-limit-light','slanted-warning-dark','slanted-warning-light','unit-corner-list-390x780','unit-corner-list-320x640','shared-menu-dark','shared-menu-light','split-stock-badge','keyboard-focus','jo-grouped-preparation','ckd-grouped-preparation','so-finished-preparation','photo-view','photo-dark-long','photo-missing','list-photo-comparison','stock-in','stock-out','partial-result','results','phone-pending','site-pending','keyboard'];
  const comparisons=report.metrics.comparisons;
  const measured='<h3>Measured layout tradeoffs</h3><ul>'+comparisons.map(c=>'<li>'+escape(c.settings.view+' · '+c.settings.count+' items · '+c.settings.size)+': '+(c.before.firstCard?'list first row '+c.before.firstCard.height+' px; proposed '+(c.after.firstCard?.height||'—')+' px. ':'')+(c.after.dock?'Persistent dock '+c.after.dock.height+' px. ':'')+'Record/review visible at initial scroll: '+c.before.recordAtTop+' → '+c.after.recordAtTop+'. Visible stock consequence rows: '+c.before.stockConsequences+' → '+c.after.stockConsequences+'.</li>').join('')+'</ul><p>'+escape(report.metrics.interpretation)+'</p>';

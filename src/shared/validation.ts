@@ -1012,6 +1012,10 @@ export const releaseSlipSchema = z.object({
   // Warehouse-out rules (modules/inventory/release-auth.ts): the token the recipient presents,
   // each package item confirmed, the seal / tag, the handoff area and the recipient's acknowledgement.
   authorization_token: trimmed.max(40).optional().nullable(),
+  authorization_id: optionalId,
+  handoff_type: z.enum(['external','internal']).optional(),
+  receiver_user_id: optionalId,
+  signature_attachment_id: optionalId,
   package: z.array(z.object({
     item_id: z.coerce.number().int().positive(),
     label: trimmed.min(1).max(120),
@@ -1039,13 +1043,19 @@ export const releaseOverrideDecisionSchema = z.object({
 /** Sales issues who may receive an order's goods (release-auth.ts). */
 export const releaseAuthorizationSchema = z.object({
   mode: z.enum(['pickup', 'delivery']),
-  recipient_name: trimmed.min(1, 'Enter the approved recipient').max(120),
+  handoff_type: z.enum(['external','internal']).default('external'),
+  receiver_user_id: optionalId,
+  recipient_name: trimmed.max(120).default(''),
   // Only the last 4 characters are kept — never the full ID number.
   id_reference: trimmed.max(40).optional().nullable(),
   valid_hours: z.coerce.number().min(1).max(24 * 14).default(24),
   handoff_area: trimmed.max(80).optional().nullable(),
   partial_allowed: z.boolean().optional(),
   notes: optionalText,
+}).superRefine((value,ctx)=>{
+  if(value.handoff_type==='internal'&&!value.receiver_user_id)ctx.addIssue({code:'custom',path:['receiver_user_id'],message:'Assign the staff receiver for an internal handoff.'});
+  if(value.handoff_type==='external'&&!value.recipient_name)ctx.addIssue({code:'custom',path:['recipient_name'],message:'Enter the approved recipient.'});
+  if(value.handoff_type==='external'&&value.receiver_user_id)ctx.addIssue({code:'custom',path:['receiver_user_id'],message:'Staff receiver assignment is only for internal handoffs.'});
 });
 
 export const revokeReleaseAuthorizationSchema = z.object({

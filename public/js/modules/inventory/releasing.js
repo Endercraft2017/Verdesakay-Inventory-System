@@ -273,6 +273,7 @@ App.register('releasing', async (view, filter) => {
   /* ------------------------------------------------------ 3. issue the release slip --- */
   async function slipModal(order, onDone, partial) {
     const photos = []; // File[]
+    let staffSignature=null;
     let slipAttempt = null;
     const newKey = (prefix) => prefix + ':' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
     // Warehouse-out rules (release-auth.ts): the recipient's token when Sales issued an
@@ -281,14 +282,15 @@ App.register('releasing', async (view, filter) => {
     try { rc = await API.get('/release-slips/orders/' + order.id + '/context'); } catch (e) { /* older server: plain slip */ }
     const auth = rc.authorization || { state: 'none' };
     // A supervisor's approved override stands in for the token; a supervisor can make one here.
-    const tov = auth.override || null;
+    const internal=auth.handoff_type==='internal';
+    const tov = internal?null:auth.override || null;
     const ovOk = !!tov && tov.status === 'approved';
-    const canOverride = !ovOk && App.hasPermission('orders.override_release');
+    const canOverride = !internal && !ovOk && App.hasPermission('orders.override_release');
     const authBlock = auth.state === 'valid'
       ? `<div class="panel" style="padding:10px 12px;margin-bottom:10px">
-           <div><b>${UI.esc(auth.mode === 'delivery' ? 'Delivery' : 'Customer pickup')}</b> · approved recipient
+           <div><b>${UI.esc(internal?'Internal staff handoff':auth.mode === 'delivery' ? 'Delivery' : 'Customer pickup')}</b> · approved recipient
              <b>${UI.esc(auth.recipient_name)}</b>${auth.id_reference ? ' · ID ' + UI.esc(auth.id_reference) : ''}</div>
-           ${ovOk
+           ${internal?'<div style="margin-top:8px">Assigned staff receiver must sign. No release code is needed.</div>':ovOk
              ? `<div style="margin-top:8px"><span class="badge-pill ok">Supervisor override</span> ${UI.esc(tov.decided_by_name || '')}:
                   ${UI.esc(tov.decision_note || tov.reason)} — the token isn't needed.</div>`
              : `<div style="margin-top:8px" data-token-row><label>Release token the recipient presents <span class="req">*</span></label>
@@ -325,18 +327,20 @@ App.register('releasing', async (view, filter) => {
         }).join('')}</div>
         ${authBlock}
         <div><label>Collected by <span class="req">*</span></label>
-          <input data-f="collected_by" placeholder="Driver / customer representative" value="${auth.state === 'valid' ? UI.esc(auth.recipient_name) : ''}" /></div>
+          ${internal?`<b>${UI.esc(auth.recipient_name)}</b><input type="hidden" data-f="collected_by" value="${UI.esc(auth.recipient_name)}">`:`<input data-f="collected_by" placeholder="Driver / customer representative" value="${auth.state === 'valid' ? UI.esc(auth.recipient_name) : ''}" />`}</div>
         <div class="field-row" style="margin-top:10px">
           <div><label>Vehicle / plate no.</label><input data-f="vehicle_plate" placeholder="Optional" /></div>
         </div>
         <div style="margin-top:10px"><label>Notes</label><input data-f="notes" placeholder="Optional" /></div>
         ${pkgBlock}
+        ${internal?'<label style="display:block;margin-top:10px">Signed acknowledgment from the assigned staff receiver <span class="req">*</span><input type="file" data-staff-signature accept="image/*"></label>':''}
         <h4 style="${LABEL}">Photos of the outgoing goods <span class="req">*</span></h4>
         <input type="file" id="rl-photo-in" accept="image/*" capture="environment" multiple hidden />
         <div id="rl-photos" style="display:flex;flex-wrap:wrap;gap:8px"></div>
         <button type="button" class="btn secondary small" id="rl-photo-add" style="margin-top:8px">${UI.icon('plus')} Add photo</button>`,
       confirmText: 'Issue slip',
       onOpen: (ov) => {
+        const signature=ov.querySelector('[data-staff-signature]');if(signature)signature.onchange=()=>{staffSignature=signature.files[0]||null;};
         const input = ov.querySelector('#rl-photo-in');
         const grid = ov.querySelector('#rl-photos');
         const drawPhotos = () => {
@@ -362,12 +366,13 @@ App.register('releasing', async (view, filter) => {
         if (!val('collected_by')) { showErr('Enter who collected the goods'); return false; }
         const overriding = !!(ov.querySelector('[data-ov]') && ov.querySelector('[data-ov]').checked);
         if (overriding && val('override_reason').length < 5) { showErr('Give the reason for releasing without the token'); return false; }
-        if (auth.state === 'valid' && !ovOk && !overriding && !val('authorization_token')) { showErr('Enter the release token the recipient presents'); return false; }
+        if (auth.state === 'valid' && !internal && !ovOk && !overriding && !val('authorization_token')) { showErr('Enter the release token the recipient presents'); return false; }
         const pkg = (rc.package || []).map((p, i) => ({ item_id: p.item_id, label: p.label, ok: ov.querySelector(`[data-pkg="${i}"]`).checked }));
         const shipping=[...ov.querySelectorAll('[data-trip-line]')].filter(box=>box.querySelector('[data-trip-unit]:checked')||[...box.querySelectorAll('input[type=number]')].some(e=>Number(e.value)>0)).map(box=>Number(box.dataset.tripLine));
         const shippingItems=(rc.lines||[]).filter(l=>shipping.includes(l.id)||l.fulfillment_mode==='ckd'&&(rc.lines||[]).some(p=>p.parent_order_item_id===l.id&&shipping.includes(p.id))).map(l=>l.item_id);
         const missing = (rc.package || []).filter((p, i) => shippingItems.includes(p.item_id)&&p.required && !pkg[i].ok);
         if (missing.length) { showErr('Confirm every required package item: ' + missing.map((p) => p.label).join(', ')); return false; }
+        if(internal&&!staffSignature){showErr('Add the assigned staff receiver’s signed acknowledgment.');return false;}
         if (!photos.length) { showErr('Add at least one photo of the goods going out'); return false; }
         if (overriding) await API.post('/release-slips/orders/' + order.id + '/override', { approve: true, reason: val('override_reason') });
         // Photos first, on the order (each once across retries): the slip takes them over, and the
@@ -383,6 +388,7 @@ App.register('releasing', async (view, filter) => {
           try { f._attId = (await API.upload('/attachments', fd, { idempotencyKey: f._uploadKey })).id; }
           catch (e) { showErr('Photo confirmation is unknown. Retry this upload with the same photo; warehouse-out has not been submitted. ' + e.message); return false; }
         }
+        if(internal&&!staffSignature._attId){const fd=new FormData();fd.append('kind','release_acknowledgment');fd.append('ref_id',String(auth.id));fd.append('caption','Assigned staff acknowledgment');fd.append('image',staffSignature);staffSignature._uploadKey=staffSignature._uploadKey||newKey('staff-signature');try{staffSignature._attId=(await API.upload('/attachments',fd,{idempotencyKey:staffSignature._uploadKey})).id;}catch(e){showErr('Signature upload is unresolved. Retry the same file. '+e.message);return false;}}
         const tripLines=[...ov.querySelectorAll('[data-trip-line]')].map(box=>{
           const unit_ids=[...box.querySelectorAll('[data-trip-unit]:checked')].map(e=>Number(e.dataset.tripUnit));
           const counts=[...box.querySelectorAll('input[type=number]')];
@@ -394,6 +400,7 @@ App.register('releasing', async (view, filter) => {
           lines:tripLines.filter(l=>l.quantity>0),
           previous_slip_id:rc.slip?rc.slip.id:null,
           collected_by: val('collected_by'), vehicle_plate: val('vehicle_plate') || null, notes: val('notes') || null,
+          handoff_type:auth.handoff_type||'external',authorization_id:auth.id||undefined,receiver_user_id:internal?auth.receiver_user_id:undefined,signature_attachment_id:internal?staffSignature._attId:undefined,acknowledged:internal?true:undefined,
           authorization_token: overriding ? null : (val('authorization_token').toUpperCase() || null), seal_tag: val('seal_tag') || null, package: pkg,
           evidence_ids: photos.map((f) => f._attId),
         };

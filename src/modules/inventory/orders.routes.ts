@@ -265,7 +265,11 @@ router.get('/', (req, res) => {
               THEN 'part' ELSE oi.fulfillment_mode END) FROM order_items oi
              LEFT JOIN inventory_items ii ON ii.id = oi.item_id
              WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd_component') AS fulfillment_modes,
-            rs.number AS release_slip_number, (${BACKORDER_SQL}) AS backordered
+            rs.number AS release_slip_number, (${BACKORDER_SQL}) AS backordered,
+            (SELECT COALESCE(SUM(MAX(0,oi.quantity-oi.cancelled_qty-oi.dispatched_qty)),0) FROM order_items oi
+             WHERE oi.order_id=o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode!='ckd') AS fulfillment_remaining,
+            (SELECT COALESCE(SUM(oi.dispatched_qty),0) FROM order_items oi
+             WHERE oi.order_id=o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode!='ckd') AS fulfillment_dispatched
      FROM orders o
      LEFT JOIN users u ON u.id = o.created_by
      LEFT JOIN suppliers s ON s.id = o.supplier_id
@@ -498,21 +502,27 @@ router.post('/:id/release-slip', requireModule('sales'), releaseGate, syncClass(
     res.status(409).json({error:'Sales must authorize a partial trip. The remainder stays reserved on this order.',blocked:'incomplete'});return;
   }
   const rule=slipError(id,{...input,shipping_item_ids:trip.map(t=>t.line.item_id!).filter(Boolean)});
-  if(rule&&!siteDecisionStands()){res.status(409).json({error:rule.error,blocked:rule.code,missing:rule.missing});return;}
+  // Internal custody requires a real assignment/signature even on site replay.
+  // Existing external physical-fact reconciliation remains unchanged.
+  if(rule&&(!siteDecisionStands()||auth?.handoff_type==='internal'||input.handoff_type==='internal')){res.status(409).json({error:rule.error,blocked:rule.code,missing:rule.missing});return;}
   if(rule)recordSiteClash(req,`${order.number}: site handoff stands although ${rule.error}`);
   const evidence=input.evidence_ids?.length?queryAll<{id:number}>(`SELECT id FROM attachments WHERE kind='release_proof' AND ref_id=? AND id IN (${input.evidence_ids.map(()=>'?').join(',')})`,id,...input.evidence_ids).map(a=>a.id):[];
   if(isAppClient(req)&&!evidence.length&&!siteDecisionStands()){res.status(409).json({error:'Add at least one handoff photo before warehouse-out.',blocked:'evidence'});return;}
-  const override=auth&&authState==='valid'?latestOverride(auth.id):null;
+  const override=auth&&authState==='valid'&&auth.handoff_type!=='internal'?latestOverride(auth.id):null;
+  const internal=auth?.handoff_type==='internal';
+  const collector=internal?auth.recipient_name:input.collected_by;
+  const signatureId=internal?input.signature_attachment_id??null:null;
   let slipId:number,deliveryId:number|null;
   db.exec('BEGIN');
   try{
     const number=nextSequence('release_slip_number','RS');
-    slipId=Number(run('INSERT INTO release_slips(number,order_id,released_by,collected_by,vehicle_plate,notes) VALUES(?,?,?,?,?,?)',number,id,req.user!.id,input.collected_by,input.vehicle_plate??null,input.notes??null).lastInsertRowid);
+    slipId=Number(run('INSERT INTO release_slips(number,order_id,released_by,collected_by,vehicle_plate,notes) VALUES(?,?,?,?,?,?)',number,id,req.user!.id,collector,input.vehicle_plate??null,input.notes??null).lastInsertRowid);
     dispatchTrip(id,slipId,trip,req.user!.id);
-    run(`INSERT INTO release_slip_details(slip_id,authorization_id,mode,recipient_name,handoff_area,seal_tag,package,acknowledged,backorder_order_id)
-      VALUES(?,?,?,?,?,?,?,?,NULL)`,slipId,auth&&authState==='valid'?auth.id:null,auth?.mode??null,input.collected_by,input.handoff_area??auth?.handoff_area??null,input.seal_tag??null,input.package?.length?JSON.stringify(input.package):null,input.acknowledged?1:0);
+    run(`INSERT INTO release_slip_details(slip_id,authorization_id,mode,recipient_name,handoff_area,seal_tag,package,acknowledged,backorder_order_id,handoff_type,receiver_user_id,signature_attachment_id)
+      VALUES(?,?,?,?,?,?,?,?,NULL,?,?,?)`,slipId,auth&&authState==='valid'?auth.id:null,auth?.mode??null,collector,input.handoff_area??auth?.handoff_area??null,input.seal_tag??null,input.package?.length?JSON.stringify(input.package):null,input.acknowledged?1:0,auth?.handoff_type||'external',internal?auth.receiver_user_id:null,signatureId);
     if(auth&&authState==='valid')run('UPDATE release_authorizations SET used_slip_id=? WHERE id=?',slipId,auth.id);
     if(override?.status==='approved'&&rule===null&&auth&&input.authorization_token?.trim().toUpperCase()!==auth.token.toUpperCase())run("UPDATE release_token_overrides SET status='used',used_slip_id=? WHERE id=?",slipId,override.id);
+    if(signatureId)run("UPDATE attachments SET kind='release',ref_id=? WHERE id=?",slipId,signatureId);
     if(evidence.length)run(`UPDATE attachments SET kind='release',ref_id=? WHERE id IN (${evidence.map(()=>'?').join(',')})`,slipId,...evidence);
     const ctx=syncContext(),snapshot=ctx?.validatedSnapshots?.releaseTrip as {orderId:number;deliveryId:number|null}|undefined;
     const originalDelivery=snapshot?.orderId===id?snapshot.deliveryId:input.delivery_id;
@@ -605,14 +615,23 @@ router.post('/:id/release', requireModule('sales'), releaseGate, syncClass('phys
        ORDER BY status = 'in_stock' DESC, id DESC LIMIT 1`,
       label?.id??null,label?.id??null,code.trim()
     );
-    if (!u) { res.status(400).json({ error: `No in-stock unit with label "${code.trim()}".` }); return; }
+    if (!u) {
+      const held = queryOne<{ id:number;identifier:string|null;order_id:number;order_number:string|null }>(
+        `SELECT u.id,u.identifier,u.order_id,o.number AS order_number FROM job_order_units u
+         LEFT JOIN orders o ON o.id=u.order_id WHERE (CASE WHEN ? IS NOT NULL THEN u.id=?
+         ELSE LOWER(COALESCE(NULLIF(TRIM(u.identifier),''),'UNIT-' || u.id))=LOWER(?) END)
+         AND u.status='reserved' ORDER BY u.id DESC LIMIT 1`,label?.id??null,label?.id??null,code.trim());
+      if (held) { res.status(409).json({code:held.order_id===id?'unit_already_allocated':'unit_allocated_elsewhere',unit_id:held.id,
+        order_number:held.order_number,error:`Unit ${held.identifier||'#'+held.id} is already allocated to ${held.order_number||'another sales order'}. Nothing was added.`});return; }
+      res.status(400).json({ error: `No in-stock unit with label "${code.trim()}".` }); return;
+    }
     unitIds.add(u.id);
   }
 
   const units = unitIds.size
-    ? queryAll<{ id: number; status: string; product_item_id: number | null; identifier: string | null; location_id: number | null; build_mode: string }>(
-        `SELECT u.id, u.status, u.product_item_id, u.identifier, COALESCE(j.build_mode, 'assembled') AS build_mode, COALESCE(u.location_id, j.output_location_id) AS location_id
-         FROM job_order_units u LEFT JOIN job_orders j ON j.id = u.job_order_id
+    ? queryAll<{ id: number; status: string; product_item_id: number | null; identifier: string | null; location_id: number | null; build_mode: string;order_id:number|null;order_number:string|null }>(
+        `SELECT u.id, u.status, u.product_item_id, u.identifier, COALESCE(j.build_mode, 'assembled') AS build_mode, COALESCE(u.location_id, j.output_location_id) AS location_id,u.order_id,o.number AS order_number
+         FROM job_order_units u LEFT JOIN job_orders j ON j.id = u.job_order_id LEFT JOIN orders o ON o.id=u.order_id
          WHERE u.id IN (${[...unitIds].map(() => '?').join(',')})`,
         ...unitIds
       )
@@ -623,6 +642,10 @@ router.post('/:id/release', requireModule('sales'), releaseGate, syncClass('phys
   const requestedPerLine = new Map<number, number>();
   const unitLine = new Map<number, OrderItem>();
   for (const u of units) {
+    if (!stands && u.status==='reserved') {
+      res.status(409).json({code:u.order_id===id?'unit_already_allocated':'unit_allocated_elsewhere',unit_id:u.id,order_number:u.order_number,
+        error:`Unit ${u.identifier||'#'+u.id} is already allocated to ${u.order_number||'another sales order'}. Nothing was added.`});return;
+    }
     if (u.status !== 'in_stock') {
       const error = `Unit ${u.identifier || '#' + u.id} is ${u.status}, not available to release.`;
       // Reserved for another order on the cloud meanwhile: the site holds and scanned it.

@@ -318,3 +318,25 @@ it('uses immutable unit QR IDs when human-readable serials are duplicated',async
  const state=queryAll<{id:number;status:string}>('SELECT id,status FROM job_order_units WHERE product_item_id=? ORDER BY id',product);
  expect(state).toEqual([{id:units[0]!.id,status:'reserved'},{id:units[1]!.id,status:'in_stock'}]);
 });
+
+it('names the holding SO when a scanned or ID-selected unit was reserved before submission',async()=>{
+ const {product,codes}=await productWithUnits('QR-HELD',2);
+ const first=await saleOrder([{item_id:product,name:'Unique controller',quantity:1,unit_price:10}],'approved');
+ const second=await saleOrder([{item_id:product,name:'Unique controller',quantity:1,unit_price:10}],'approved');
+ const units=(await ctx.api.get(`/api/finished-products/${product}/units?status=all`).set(H())).body;
+ const code='VDS:UNIT:'+units[0].id,stock=await onHand(product);
+ // The second clerk's lookup succeeds before the first clerk reserves the unit.
+ expect((await ctx.api.get(`/api/release-slips/orders/${second}/unit`).query({code}).set(H())).body.state).toBe('available');
+ expect((await ctx.api.post(`/api/orders/${first}/release`).set(H()).send({codes:[code]})).status).toBe(200);
+ const number=(await getOrder(first)).number;
+ for(const body of [{codes:[code]},{unit_ids:[units[0].id]}]){
+  const refused=await ctx.api.post(`/api/orders/${second}/release`).set(H()).send(body);
+  expect(refused.status).toBe(409);expect(refused.body.code).toBe('unit_allocated_elsewhere');
+  expect(refused.body.order_number).toBe(number);expect(refused.body.error).toContain(number);
+ }
+ const same=await ctx.api.post(`/api/orders/${first}/release`).set(H()).send({codes:[code]});
+ expect(same.status).toBe(409);expect(same.body.code).toBe('unit_already_allocated');
+ expect(await onHand(product)).toBe(stock);
+ expect((await getOrder(first)).items[0].reserved_qty).toBe(1);
+ expect((await getOrder(second)).items[0].reserved_qty).toBe(0);
+});

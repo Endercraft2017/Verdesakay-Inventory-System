@@ -39,6 +39,30 @@
     Promise.resolve().then(load);
     return {el:root,value:function(){if(mode.value==='existing'&&!state.customer_id)throw new Error('Choose an existing customer from search, or select Walk-in.');if(!state.customer_name.trim())throw new Error('Enter the customer name.');return Object.assign({},state,{customer_name:state.customer_name.trim(),customer_contact:state.customer_contact.trim()||null});}};
   }
+  // A slip proves one trip, not completion of the entire order.
+  function fulfillmentStage(order, queue) {
+    var status=String(order.status||'').toLowerCase(),left=order.fulfillment?.remaining??order.fulfillment_remaining;
+    if(left!=null&&Number(left)>1e-9){
+      if(Number(order.fulfillment?.dispatched??order.fulfillment_dispatched)>0)return 2;
+      if((queue?.releasing||[]).some(function(r){return Number(r.id)===Number(order.id);})||status==='released')return 2;
+      return status==='approved'?1:0;
+    }
+    if(['completed','fulfilled'].includes(status)||order.release_slip_number&&left!=null&&Number(left)<=1e-9)return 3;
+    if((queue?.releasing||[]).some(function(r){return Number(r.id)===Number(order.id);})||status==='released'||order.release_slip_number)return 2;
+    if((queue?.to_accept||[]).some(function(r){return Number(r.id)===Number(order.id);})||status==='approved')return 1;
+    return 0;
+  }
+  function orderProgress(order) {
+    return RoleUI.section('Warehouse fulfillment')+RoleUI.lines((order.items||[]).filter(function(l){return l.item_id&&!l.parent_order_item_id;}).map(function(l){
+      var shipped=Number(l.dispatched_qty||0),held=l.held_qty!=null?Number(l.held_qty):Number(l.reserved_qty||0)+Math.max(0,Number(l.released_qty||0)-Number(l.dispatched_bulk_qty||0));
+      if(l.fulfillment_mode==='ckd'){
+        var parts=order.items.filter(function(p){return p.parent_order_item_id===l.id;}),ratios=parts.map(function(p){return {per:p.quantity/l.quantity,held:Number(p.reserved_qty||0)+Math.max(0,Number(p.released_qty||0)-Number(p.dispatched_bulk_qty||0))};});
+        held=ratios.length?Math.min.apply(null,ratios.map(function(p){return p.per>0?Math.floor((p.held+1e-9)/p.per):0;})):0;
+      }
+      var left=Math.max(0,Number(l.quantity)-Number(l.cancelled_qty||0)-shipped),unit=l.fulfillment_mode==='ckd'?'kits':l.unit||'pcs';
+      return {name:'Line #'+l.id+' · '+l.name,qty:shipped+' '+unit+' shipped',detail:held+' '+unit+' held · '+left+' '+unit+' still to ship'+(Number(l.cancelled_qty)>0?' · '+l.cancelled_qty+' cancelled':''),ok:left===0};
+    }));
+  }
   function deliveryFacts(order){
     var result=RoleUI.field('Target delivery date',order.expected_date||'Not set');
     var events=(order.delivery_events||[]).filter(function(e){return e.delivered_at&&e.status==='delivered';});
@@ -57,5 +81,5 @@
       await refresh();
     });
   }
-  window.mSaleUI={customerPicker:customerPicker,deliveryFacts:deliveryFacts,productionJobs:productionJobs,paintApproval:paintApproval};
+  window.mSaleUI={fulfillmentStage:fulfillmentStage,orderProgress:orderProgress,customerPicker:customerPicker,deliveryFacts:deliveryFacts,productionJobs:productionJobs,paintApproval:paintApproval};
 })();

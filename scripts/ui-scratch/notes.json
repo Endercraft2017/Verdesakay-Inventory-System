@@ -1,110 +1,150 @@
 {
-  "title": "Chunk 28 · consistent stock-limit feedback in List and Photos",
-  "scope": "Optional photo carousel for the existing Batch Stock In and Batch Stock Out entry; Batch Results retains its existing recovery flow. Original rounded green design, shared navigation, permissions and stock rules.",
+  "review": "so-release",
+  "title": "Sales to Releasing · complete the handoff",
+  "scope": "Complete the existing mobile Sales authorization, releasing queue, partial-trip progress, handoff, receipt and exception screens. Preserve the rounded green design and all permissions, stock rules and recovery.",
+  "isolation": "Actual working-tree components and handlers with fictional records captured through real disposable APIs. Hosted camera, authorization/report writes and picking responses are isolated simulations. DEMO-CODE is a preview-only simulated check. Final uploads/warehouse-out are disabled. Prepared-kit manifests remain a separate missing-backend proposal; the 2,000-component case is synthetic stress data. No production data connection.",
+  "try": "Use the new review examples for Sales authorization, the release queue, a partial trip, complete handoff and the release receipt. Existing QR and CKD picking examples remain. Hosted writes stay isolated; final warehouse-out is not connected to production. For an external handoff, the isolated preview accepts DEMO-CODE. This is simulated verification; production codes are never included.",
   "deeperWork": [
-    "A professional highlights the visible stock consequence in the active view, replaces repeated feedback rather than stacking it, and distinguishes exhausted stock from a completed SO/JO requirement.",
-    "Start from the real row’s After value, Plus handler, source availability, current layout and existing feedback/cancellation path.",
-    "Apply the installed Motion Principles restraint and reduced-motion guidance to the existing 200ms rejection effect. Use Playwright/Chromium to verify red text, the actual animation target, repeated presses, keyboard use and unchanged quantities/requests.",
-    "Independent evidence is the full 0 pcs value turning red and shaking in List, unchanged stock and draft quantities, no stacked motion, and red-only keyboard/reduced-motion feedback. Physical-device testing remains unverified."
+    "Check the handoff between roles and every source of truth, rather than polishing individual screens. Prevent partial shipments from appearing complete and ensure internal staff policy works in mobile Sales as well as Releasing.",
+    "Use the actual mobile Sales and SO routes, authoritative authorization/receiver rows, order-line dispatched/held quantities, immutable handoff attempts, slip details and attachment references. Capture fictional records through disposable real handlers.",
+    "Use Taste app-screen task hierarchy, focused UI UX Pro Max confirmation/error-recovery guidance, existing shared motion and green controls. Compare separate screens with combined handoff/proof and combined review/confirmation; verify using Playwright, axe, Vitest and real disposable backend requests.",
+    "Correctness comes from unchanged server stock/permission rules, exact partial-trip accounting, no request on blocked activation, preserved immutable retry keys and signed evidence, and browser checks at narrow widths in both themes. Physical staff validation remains separate."
   ],
-  "brief": "Extend only the existing stock-limit rejection feedback: when Plus would make source stock negative in List view, turn the full visible After value, including 0 pcs, red and shake it alongside the quantity field. Reuse the shared semantic red and existing cancellable 200ms feedback. Keep photo feedback, stock guards, quantities and recording behavior unchanged. Repeated presses replace existing feedback; keyboard and reduced-motion users receive red text and a live message without shaking. Keep requirement-only limits distinct from exhausted stock, verify both themes, and update the same private scratch preview.",
-  "decisions": [
-    "Only the image rail scrolls. Name, SKU, warehouse, quantity and other metadata change when the image settles; they never translate sideways. Arrows, gradients and the single stock badge are children of the stationary photo frame, rather than independent page-positioned overlays.",
-    "After and Available use a high-contrast angled background boundary. A literal slash divider is removed. The projected value remains labeled and turns red for negative stock; unavailable data stays Unknown.",
-    "Main means the selected stock warehouse. It stays beside the item name because these quantities belong to that location. Extra on-hand context appears on the SKU line when reservations mean on-hand differs from available stock.",
-    "The repeated quantity caption is removed visually. The unit sits at the value panel’s lower-right corner. SO/JO preparation retains the real prepared / needed denominator; the user confirmed that free inventory movements keep a plain quantity.",
-    "A required-total limit and a stock limit are distinguished: reaching a requirement highlights the quantity only; exhausting available stock highlights both quantity and After. Valid maximum quantities remain recordable.",
-    "Existing assembled SO / CKD / JO grouping policy, shared-stock budgeting, permissions and stock commands remain unchanged. Preparation examples are draft-only design proposals, and their reservation/release integration remains pending.",
-    "The original input and target form a tight centered pair instead of a fixed 55% input. List controls give the ratio its own minimum width; all step buttons retain 44px or larger targets. Standalone movements remain plain quantities.",
-    "Loaded images use zero inset and object-fit: cover. This fills the frame but may crop photo edges; missing-photo and loading messages keep safe padding. Original catalogue photos are unavailable; fixtures remain explicitly fictional.",
-    "Compared a separate build row with a fixed metadata slot. The fixed 44px metadata slot wins: SKU stays on the left and the finished-product-only selector occupies the right. Parts never show build controls; all items use the same photo height. This trades a modest metadata reserve for stable navigation.",
-    "Add/source and QR scan now form an adjacent pair with a 6px gap.",
-    "The settled active circle again shows the selected item index. Only the number is hidden during scroll-linked stretch/squash or a pointer jump. Every small dot remains drawn; the circle covers the current dot at rest, so leaving it never produces a hole. Keyboard and reduced-motion navigation immediately show the final number.",
-    "Compared keeping a disabled preview action versus a compact summary: the preview has no stock-posting handler, so the footer now shows Prepared lines and a short preview-only note. A real Save action is rendered only if a committing workflow supplies its handler. No new stock-posting capability is added.",
-    "The global quick-action control is independent of the form again. No slot or column is reserved inside Record. It retains its own draggable position and is moved above the footer only when they would overlap; leaving the screen restores its prior position. Drag and keyboard placement continue to keep the task footer clear.",
-    "The warning uses an SVG shape with the same slanted edge as the ordinary After panel. Its non-scaling stroke is drawn above Available and outside its own SVG bounds, so it keeps the original shape without clipping or a rectangular box. It uses the documented shared red badge color.",
-    "Photo height is restored from 128px to 160px at 390 × 780. The floating shortcut no longer determines image size. Where it would cover Add a note, only that secondary disclosure reserves horizontal space; its 44px target, existing handler and text remain accessible. That reservation stays stable through body-locking overlays.",
-    "Available → After and Quantity captions remain as visually hidden semantic labels. Stock numbers and their arrow remain visible in List view. Every real quantity input displays its unit inside the value panel’s lower-right corner; SO/JO denominators retain their authoritative requirements.",
-    "The sync fast-forwarded to origin commit 4aba7149. All uncommitted work was restored; a named stash and binary patch were retained as backups. Two skill-metadata conflicts were reconciled, preserving the previous local motion-skill folder and adopting the new canonical skill/resources. No dependency installation was needed.",
-    "The preview now executes the current shared screen-ux.js and RoleUI source, bundles original icon bytes and hashes, and keeps underlying native select values/events. Standard controls use the global radius, status colors and popup design; page-local disclosure timing was removed. The explicit source-stock check is purpose-labeled and remains draft-safe.",
-    "A direct Batch Stock Out link previously dropped its mode and could land on Stock In. The shared Back fallback now returns that route to Work; owned history still returns to the permitted predecessor. No page-specific Back handler was added.",
-    "The updated AGENTS.md explicitly selects the existing private verdesakay-ui-scratch Site. This review uses that shared destination and preserves its owner-only audience; the older Chunk 28 Site is left intact.",
-    "A blocked Plus press now targets the visible After display: the slanted stock panel in Photos, or the complete number-and-unit text in List. List feedback uses the existing semantic red and 200ms shake with no extra box or label. Cleanup removes the transient red text from every row. A completed request with available stock still highlights only its quantity control."
-  ],
-  "isolation": "Actual candidate source components run in the phone frames. Records, labeled demo illustrations, transport and storage are fixtures; no original catalogue photo or real token is bundled. The SO/JO examples read fixture responses with the real API field shapes and keep draft tallies in memory. Their stock-posting action is deliberately unavailable pending integration with the existing order workflows. Reset/reload starts a fresh fixture session. Normal batch writes remain isolated, with native persistence and stock rules checked separately against a disposable backend.",
-  "iterations": [
-    "The previous whole-card rail reproduced the user’s broken-overlay problem. Replaced it with one stationary photo frame and an image-only rail using the same row fields.",
-    "Compared active dot fading, a sliding shared indicator and stretch/worm feedback against the productivity motion guidance. Selected restrained scroll-linked stretching.",
-    "Condensed the location and unit rows, added diagonal stock panels, and separated blocked Plus feedback from valid maximum-stock recording.",
-    "Confirmed with the user: keep a plain quantity outside SO/JO preparation.",
-    "All current evidence is regenerated for this revision; previous whole-card motion measurements do not describe this proposal.",
-    "The image rail received a proper keyboard focus target after axe identified a scrollable-region accessibility failure. Mid-gesture tests now assert that metadata and every overlay stay anchored.",
-    "The previous revision removed the number entirely; the user clarified that only the moving number should disappear. The current proposal restores the settled index while retaining the corrected ratio input, full-frame images and stable category layout.",
-    "Corrected the prior interpretation: the user wants no number during movement, with the correct selected number restored after settling. Removed the selected-dot opacity rule that caused a disappearing position.",
-    "Removed the footer’s reserved Quick Orbit slot and the large inert preparation action. New browser checks cover overlap, warning stacking, all dot visibility, and interrupted numbering.",
-    "Reversed the earlier rectangular warning and image-height reduction after user feedback. Reused the existing slanted shape and restored the prior photo measurement.",
-    "Read the newer AGENTS.md and complete shared mobile design contract; synchronized the repo without a reset, preserved local work, and integrated the current shared interaction primitives before verification.",
-    "Added the missing List-view feedback to the same rejection path; previously that path animated the hidden photo panel while the visible 0 pcs stayed neutral."
-  ],
+  "brief": "Finish the six identified gaps in the current Sales-to-Releasing journey. Add external/internal assignment to mobile Sales using the existing authorization backend and durable workflow handler. Correct queue policy labels and factual partial-order progress. Combine recipient verification with evidence capture, and review with final stock-out confirmation, preserving explicit package checks and final acknowledgment. Show receiver/signature and goods on receipts. Give exceptions persistent reasons, accountable next steps and safe recovery. Reuse approved shared green controls and motion; compare alternatives and host a source-derived isolated proposal with backend/browser evidence before production rollout.",
   "tasks": [
     {
-      "view": "Batch Stock In / Out · List",
-      "task": "Scan and edit several draft movements quickly.",
-      "hierarchy": "Source → picker → compact rows and stock consequences → shared totals and Record."
+      "view": "Sales authorization",
+      "task": "Decide who may receive the order and whether a code or staff signature is required.",
+      "hierarchy": "Order → handoff type → external recipient or assigned staff → validity/partial trips → issue."
     },
     {
-      "view": "Batch Stock In / Out · Photos",
-      "task": "Identify one selected item visually and edit its draft quantity.",
-      "hierarchy": "View / add controls → name and SKU → source and stock → photo and item navigation → large draft quantity → shared review / Record."
+      "view": "Complete handoff",
+      "task": "Verify the receiver and collect photo/signature evidence in one workspace.",
+      "hierarchy": "Order and load → receiver requirement → photo/signature → review and release."
     },
     {
-      "view": "Batch Results",
-      "task": "Understand confirmed, refused and pending outcomes.",
-      "hierarchy": "Outcome → unresolved items and safe action → confirmed records. Presentation preference does not change recovery."
+      "view": "Prepare items",
+      "task": "Identify order and recipient, then allocate the correct stock without leaving picking.",
+      "hierarchy": "Order/source/recipient → ready sale lines → Scan → inline line choice/quantity → Allocate. Secondary tools are disclosed."
+    },
+    {
+      "view": "CKD kits",
+      "task": "Prepare or allocate whole kits while retaining exact component demand.",
+      "hierarchy": "Product kit and complete-kit count → visible shortages → prepared-kit proposal or loose-component search → exact quantities and traceability."
+    },
+    {
+      "view": "Authority exception / acceptance",
+      "task": "Resolve actual authority and acceptance prerequisites.",
+      "hierarchy": "Order/recipient → specific blocker or Accept & start picking. Accepted authorized orders skip the redundant review transition."
     }
+  ],
+  "decisions": [
+    "The matched package-to-release task now has three screens instead of five: package checklist → Complete handoff (receiver, photo and signature) → Review and release (goods, evidence and explicit final check). Browser traces measured two fewer navigation actions before the enabled warehouse-out button. Hosted final stock-out is disabled.",
+    "Mobile Sales now assigns an active internal staff receiver or an external recipient. It explains the code/signature distinction, saves drafts, provides persistent red blocked feedback and uses the existing immutable authorization attempt. Optional partial trips and notes are disclosed.",
+    "The release queue uses the shared mobile dropdown for stages, preserves the filter in the route and labels internal signatures separately from external release codes. Partial-trip selection shows shipped, selected, retained and still-to-ship quantities per exact sale line.",
+    "Receipts display the saved receiver, signed-acknowledgment reference, exception reason and exact goods on the historical slip, with a clear remaining-order action. The hosted image is an explicitly fictional placeholder; actual attachment binding is verified against a disposable backend.",
+    "Reports now keep their description and immutable submission using the native workflow helper. Receiver issues identify Sales as the next owner; code exceptions stay external-only, including old direct links. Unknown warehouse-out results retain the original payload/key and evidence.",
+    "Browser findings corrected: signature Clear/remove targets are at least 44px; the signature footer works in both themes; shared task typography supplies readable Sales labels; quantity inputs have an explicit shared rounded field; quick actions are hidden during focused tasks. Keyboard/reduced-motion feedback reuses the approved shared component.",
+    "Compared a long all-in-one packing/identity/evidence page with keeping physical package checks separate. Chose package check → combined recipient/evidence → combined review/final confirmation. This reduces five screens to three while retaining each distinct physical decision.",
+    "Mobile Sales uses the existing typed authorization endpoint and immutable workflow handler; Releasing cannot choose or weaken the Sales-issued policy.",
+    "Order progress must use dispatched and outstanding quantities, not the presence of any release slip. Product units, CKD kits and component quantities stay distinct.",
+    "Handoff purpose is separate from pickup/delivery transport mode. Sales chooses external or internal; Releasing cannot change it in a final request. An internal assignment derives the recipient name from an active staff account and issues no code.",
+    "Internal signature staging references the exact authorization ID, not just the order. Replacing the authorization or receiver invalidates older signatures. Final signature, receiver snapshot, package confirmations and stock dispatch are saved together. An image is retained evidence; software cannot establish who physically signed it.",
+    "Backward compatibility: old rows migrate to external. Existing company authorization_required=false remains an explicit legacy policy option for orders without an authorization. An issued external authorization still requires its code or existing supervisor override; an issued internal authorization always requires the assigned receiver and signed evidence.",
+    "The existing handoff screen conditionally discloses the relevant requirement. Internal staff see assignment and signature guidance; external recipients keep code verification. No new operational screen, palette or workflow step is introduced.",
+    "The checklist example starts directly at the existing Verify release package screen because stock is already reserved in its real disposable-API snapshot. No new operational screen or stock rule is added. Two required package items and an optional guide use the existing per-product configuration.",
+    "The existing checklist buttons now expose checkbox role and checked state and keep keyboard focus on the toggled row. Visual design, required-item rules and draft persistence remain native.",
+    "Recipient-token verification is the final releasing/handoff check. Sales issues a time-limited authorization for the approved receiver; the receiver presents the code. It is separate from unit/batch QR picking. The existing policy, expiry/revocation checks and approved supervisor override remain unchanged.",
+    "A physical unique-unit QR resolves its immutable unit ID and adds one immediately when the sale line is unambiguous or already selected. The quantity form remains for non-serialized batch/bulk stock. Manual search never auto-adds without the physical verifier. Single-unit confirmation is intentionally removed in response to the user’s instruction.",
+    "Compared routing both label types through a common quantity/confirmation form with branching on authoritative lookup type. Chose explicit branching: one scan for one unique unit; counted quantity for a batch. Generic product codes never impersonate a unit or tracked batch.",
+    "Batch UI shows free quantity in this batch at this warehouse separately from remaining sale-line demand and the maximum allocation. It rereads the batch and SO immediately before posting, updates a changed cap without inventing stock, and retains the typed quantity with a correction reason. The server still enforces the final cap against races.",
+    "Lookup and post-time unit reservation conflicts name the SO already holding the unit. The inline lookup refusal uses persistent red text and the shared shake; a post-time race keeps the native immutable recovery record and shows its rejection in red. An already-added unit on this SO is informational and creates no second reservation.",
+    "Compared the previous authority → picking → allocation route chain with one inline workspace. Chose inline for accepted orders: order and recipient stay visible, and scans open the quantity form without another task screen. Acceptance and authority failures keep explicit handling.",
+    "Scanner callbacks now distinguish camera from manual entry and include capture time. SO evidence stays in closure memory, bound to context, account/server, warehouse, authorization, saved requirements/held snapshot and route. No URL/draft/API field can seed verification. Reload, replacement/cancellation, context change and five-minute expiry prevent reuse. Exact sale-line eligibility remains native.",
+    "Manual entry only finds stock. A generic product code cannot verify a specific unit or batch. Only the expected physical-label identity/alias seeds verification; any different required scan explains what evidence is missing.",
+    "Blocked allocation uses aria-disabled and a guarded handler so it can explain the prerequisite. Pending writes use native disabled controls and a synchronous busy guard. Red announced text persists. Pointer activation gets an interruptible 180ms transform shake; keyboard/reduced-motion keep static feedback. The helper lives in shared screen UX.",
+    "CKD progress is the minimum whole-kit count from held quantities divided by saved per-kit ratios, constrained by parent demand. Pieces and metres are never added together. Components remain exact sale lines drawing from shared pools. Details render at most 12 rows with search/pagination; shortage totals stay visible outside disclosures.",
+    "Minimum missing capability: authoritative prepared-kit/package identity bound to order, parent line, warehouse and saved BOM/content revision; exact contents plus serial/batch assignments; verified/sealed status with checker/time; atomic availability revalidation and consumption with immutable retries. A generic product label supplies none of this.",
+    "DEMO:KIT and /__review/prepared-kits are isolated proposal fixtures. The demo covers checked non-serialized kits, rejects stale/incomplete/wrong-location manifests and revalidates shared stock. It does not implement production serial/batch package aggregation; required tracked assignments must exist before rollout.",
+    "Keep readable controls and allow scrolling at small/keyboard sizes. Preserve shared back behavior, dropdowns, tokens and button geometry. No decorative page entrances or new animation dependency."
   ],
   "states": [
     {
-      "state": "First / middle / last item",
-      "signal": "Current index inside the settled circle; the label is hidden during movement. All small dots remain present.",
-      "action": "Swipe, tap an edge, click a dot or use arrow/Home/End keys."
+      "state": "Unique-unit physical QR",
+      "signal": "Adding 1 unit, then server-confirmed unit identity and updated allocation count.",
+      "action": "No quantity field or redundant confirmation; exact-line choice only when ambiguous."
     },
     {
-      "state": "Insufficient source/request stock",
-      "signal": "Red After estimate and inline validation; Available remains labeled.",
-      "action": "Recording remains blocked; Review reveals the row."
+      "state": "Batch quantity QR",
+      "signal": "Batch free here, still needed on the line and maximum allocation are shown separately.",
+      "action": "Enter count; pre-submit reread and server validation prevent stale or excessive allocation."
     },
     {
-      "state": "Focused quantity / keyboard",
-      "signal": "The original numeric input remains fully visible above fixed controls.",
-      "action": "Focus/viewport changes scroll the page; quantity and selected item stay intact."
+      "state": "Unit allocated to another SO",
+      "signal": "Red outline/shake and a specific SO number with a recovery instruction.",
+      "action": "No reassignment; preserve the existing reservation and original-request recovery if the conflict arose during submission."
     },
     {
-      "state": "SO / CKD / JO preparation examples",
-      "signal": "Prepared / needed and a product/request selector. Shared-part demand remains visible.",
-      "action": "Edit draft tallies and switch groups; no reservation or stock posting in this review."
+      "state": "Matching physical camera scan",
+      "signal": "Label verified in the inline form.",
+      "action": "Confirm quantity and allocate; no identical second scan."
     },
     {
-      "state": "Missing/failed photo, pending/refused/confirmed movement",
-      "signal": "Existing explicit text, icons and semantic colors.",
-      "action": "Existing image retry and batch recovery remain separate from quantity editing."
+      "state": "Manual / generic code / expired evidence",
+      "signal": "Specific missing verification reason.",
+      "action": "Attempted allocation gives persistent red recovery text, without a request. Scan the required attached label."
+    },
+    {
+      "state": "Invalid quantity / no stock / offline",
+      "signal": "Local red explanation and corrective action.",
+      "action": "No write; retain the entered quantity."
+    },
+    {
+      "state": "Pending / refused / unknown",
+      "signal": "Busy guard or native original-request recovery.",
+      "action": "Same immutable key/payload. No duplicate reservation or implied warehouse-out."
+    },
+    {
+      "state": "CKD loose / prepared kit",
+      "signal": "Whole-kit totals, visible shortages, explicitly simulated prepared manifests.",
+      "action": "Prepare/search loose components or scan an already checked kit record. Generic product QR never proves completeness."
+    },
+    {
+      "state": "Thousands of component lines",
+      "signal": "One kit summary and bounded searchable/paged details.",
+      "action": "A verified-kit handover need not scan each component again; earlier physical preparation is still required."
     }
   ],
   "research": [
     {
-      "title": "MDN Element.animate",
-      "url": "https://developer.mozilla.org/en-US/docs/Web/API/Element/animate",
-      "finding": "Creates and plays an animation and returns the Animation object; used for bounded rejection feedback."
+      "title": "GS1 · Logistics unit identification",
+      "url": "https://support.gs1.org/support/solutions/articles/43000734289-what-is-a-logistics-unit-and-how-is-it-identified-",
+      "finding": "Unique logistics-unit identity retrieves information about that package. Applied as identity-to-manifest pattern, not a claim that DEMO labels are SSCC or that GS1 certifies our contents."
     },
     {
-      "title": "MDN Animation.cancel",
-      "url": "https://developer.mozilla.org/en-US/docs/Web/API/Animation/cancel",
-      "finding": "Clears effects and aborts playback; prior feedback is canceled without relying on animation completion for state."
+      "title": "Odoo · Kits",
+      "url": "https://www.odoo.com/documentation/19.0/applications/inventory_and_mrp/manufacturing/advanced_configuration/kit_shipping.html",
+      "finding": "Official search excerpt confirms one sales kit with component delivery lines. Full page timed out; used only for that limited distinction, not to justify skipping physical preparation checks."
     },
     {
-      "title": "MDN Element.scrollTo",
-      "url": "https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTo",
-      "finding": "Native smooth/instant scrolling supports the image rail, while keyboard and reduced-motion navigation remain immediate."
+      "title": "SQLite · ALTER TABLE ADD COLUMN",
+      "url": "https://www.sqlite.org/lang_altertable.html#alter_table_add_column",
+      "finding": "Additive migration uses a non-null external default, nullable reference columns and idempotent column probes; existing authorizations retain their policy."
+    },
+    {
+      "title": "Installed UI UX Pro Max · confirmation and error recovery search",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/error-suggestion.html",
+      "finding": "Focused local search returned confirmation for irreversible actions and clear recovery steps. Applied one final stock-out confirmation, persistent blocked reasons and an identified next owner. Browser checks separately verify the actual result; this guidance is not staff research."
     }
+  ],
+  "iterations": [
+    "Inspected native acquisition, separate verification, exact-line lookup and immutable recovery. Repeated scanning came from treating both scan paths as unrelated evidence.",
+    "Confirmed saved CKD component snapshots and server complete-kit dispatch checks exist. No verified SO prepared-kit identity/manifest endpoint was found.",
+    "UI UX Pro Max error message recovery search returned recovery instructions, announced errors and field-associated inline messages. Taste task/data hierarchy informed consolidation. Motion uses Emil-primary restraint and Jakub-secondary polish.",
+    "Results below distinguish hosted simulation, real-backend evidence and unperformed staff/physical-device testing.",
+    "QR follow-up: added API-captured received serialized units and a real non-serialized production batch, with same-order/other-order reservations. Reused existing stock rules, scanner metadata, green design and shared rejection feedback. New tests cover both QR types, repeated scans and reservation/quantity races.",
+    "Checklist follow-up: created a dedicated fictional finished product with two required package items and one optional item through the real configuration API. The real slip endpoint rejected an omitted required item with zero on-hand change. Added a direct-link fixture and browser/keyboard/accessibility cases. Handoff token verification and final warehouse-out remain outside the hosted checklist test.",
+    "Backend handoff policy added with v98 migration, typed Sales assignment, exact-authorization signature uploads, native desktop/mobile wiring and adversarial API tests. UI UX Pro Max focused search confirmed visible associated labels and explicit submit feedback; conditional disclosure uses existing fields rather than another screen.",
+    "Completed the six remaining Sales/Releasing gaps. Used original mobile components, a real partial trip and typed authorization records captured in disposable SQLite. Compared the exact previously published SO component and frozen Site styles with the updated implementation; matched task measured five screens versus three. Current native checks cover Sales issuance permissions/repeat activation, partial-order progress and signed handoff recovery."
   ]
 }

@@ -3,9 +3,9 @@
   var R=RoleUI, renderSerial=0;
   function csr(){return MApp.can('orders.view')&&(MApp.can('orders.create')||MApp.can('orders.edit')||MApp.can('orders.approve'));}
   function go(p){MApp.go('sales',p||{});}
-  function page(view,title,sub){return R.page(view,{role:'Sales',title:title,subtitle:sub});}
+  function page(view,title,sub,task){return R.page(view,{role:'Sales',title:title,subtitle:sub,task:!!task});}
   function field(label,key,value,type){return '<label class="rk-card rk-field"><small>'+mEsc(label)+'</small><input class="rk-input" data-'+key+' type="'+(type||'text')+'" value="'+mEsc(value==null?'':value)+'"></label>';}
-  function stage(r,q){if((r.release_slip_number&&!r.backordered)||['completed','fulfilled'].includes(r.status))return 3;if((q.releasing||[]).some(function(x){return x.id===r.id;})||r.status==='released')return 2;if((q.to_accept||[]).some(function(x){return x.id===r.id;})||r.status==='approved')return 1;return 0;}
+  function stage(r,q){return mSaleUI.fulfillmentStage(r,q);}
   var stages=['Sales review','Awaiting warehouse','Picking / release','Shipped / complete'];
   // The rail reflects facts returned by the existing order/queue reads. It does
   // not infer shortages from an open order or change workflow eligibility.
@@ -41,7 +41,7 @@
     var saved=!tracking&&!customerJob&&MApp.can('orders.approve')?await mWorkflow.load('sale-approval-'+id):null;if(!body.isConnected)return;
     body.innerHTML=R.jobHead({number:r.number,name:customerJob?'Customer job order · view only':'Sales order',meta:r.customer_name||'No customer'})+
       R.field('Status / next owner',r.status+' · '+(customerJob?'Production planning':s===0?'Sales / CSR':s===1||s===2?'Warehouse releasing':'Delivery / customer'))+
-      (!customerJob?R.field('Stage',stages[s])+mSaleUI.deliveryFacts(r):R.note('info','Customer JO records are read-only in Sales, including for administrators. Production planning belongs to the Production desk.'))+
+      (!customerJob?R.field('Stage',stages[s])+mSaleUI.orderProgress(r)+mSaleUI.deliveryFacts(r):R.note('info','Customer JO records are read-only in Sales, including for administrators. Production planning belongs to the Production desk.'))+
       R.field('Customer contact',r.customer_contact||'—')+R.field('Notes',r.notes||'—')+
       R.section('Order lines')+R.lines((r.items||[]).map(function(x){return {name:x.name,qty:x.quantity+' '+(x.unit||''),detail:x.fulfillment_mode==='semi_built'?'Semi-built':x.fulfillment_mode==='ckd'?'CKD':'Assembled / part',ok:true};}))+
       (!customerJob?R.section('Stock readiness')+R.lines((av.lines||[]).map(function(x){return {name:x.name||'Line '+x.order_item_id,qty:'Short '+(x.shortfall||0),detail:'Available '+(x.available==null?'Check picking desk':x.available),ok:!x.shortfall};}))+mSaleUI.productionJobs(av)+
@@ -51,7 +51,7 @@
         .concat(!tracking&&!customerJob&&MApp.can('orders.release')&&s<3&&r.status!=='cancelled'?[{id:'sale-release',label:'Open releasing workflow',kind:'primary'}]:[])
         .concat(!tracking&&!customerJob&&MApp.can('orders.authorize')&&s<3&&['approved','released'].includes(r.status)?[{id:'sale-authorize',label:'Authorize release / partial trips',kind:'secondary'}]:[])
         .concat([{id:'sale-back',label:'Back to '+(tracking?'tracking':'pipeline'),kind:'secondary'}]));
-    if(!tracking&&!customerJob&&MApp.can('orders.authorize')){var authorizations=await API.get('/release-slips/orders/'+id+'/authorizations');if(!body.isConnected)return;var current=(authorizations.history||[]).find(function(a){return !a.revoked_at&&!a.used_slip_id;});if(current)body.insertAdjacentHTML('beforeend',R.section('Current release authorization')+R.field('Recipient / mode',current.recipient_name+' · '+current.mode)+R.field('Release token',current.token||'—')+R.field('Partial trips',current.partial_allowed?'Authorized':'Full order only'));}
+    if(!tracking&&!customerJob&&MApp.can('orders.authorize')){var authorizations=await API.get('/release-slips/orders/'+id+'/authorizations');if(!body.isConnected)return;var current=(authorizations.history||[]).find(function(a){return !a.revoked_at&&!a.used_slip_id;});if(current)body.insertAdjacentHTML('beforeend',R.section('Current release authorization')+R.field('Recipient / mode',current.recipient_name+' · '+current.mode)+(current.handoff_type==='internal'?R.field('Staff acknowledgment','Assigned receiver must sign · no code required'):R.field('Release code — give to recipient',current.token||'Not available'))+R.field('Partial trips',current.partial_allowed?'Authorized':'Full order only'));}
     if(body.querySelector('#sale-authorize'))body.querySelector('#sale-authorize').onclick=function(){go({id:id,step:'authorize'});};
     if(body.querySelector('#sale-edit'))body.querySelector('#sale-edit').onclick=function(){go({id:id,step:'edit'});};
     if(body.querySelector('#sale-approve'))body.querySelector('#sale-approve').onclick=function(){go({id:id,step:'approve'});};
@@ -105,14 +105,41 @@
   }
   async function authorizationForm(view,id){
     if(!MApp.can('orders.authorize'))throw Error('Sales release-authorization permission is required.');
-    var body=page(view,'Authorize release','Sales decision');var saved=await mWorkflow.draft('sale-authorization-'+id);if(!body.isConnected)return;if(saved.operation.state!=='draft')return mWorkflow.paint(view,saved);
-    var order=await API.get('/orders/'+id),b=saved.batch;if(!body.isConnected)return;if(order.type!=='sale')throw Error('Customer JO records are read-only in Sales.');
-    body.innerHTML=R.note('warn','This replaces any unused authorization. A partial-trip report alone does not authorize a partial release. The warehouse must still scan and issue each trip slip.')+
-      '<label class="rk-card rk-field"><small>Handoff mode</small><select data-mode><option value="pickup">Customer pickup</option><option value="delivery">Delivery</option></select></label>'+field('Approved recipient','recipient',b.recipient)+field('ID reference (last four only)','reference',b.reference)+field('Valid hours (1–336)','hours',b.hours||24,'number')+field('Handoff area','area',b.area)+field('Sales notes','notes',b.notes)+R.check('sale-partial','Authorize separate partial trips for this order')+R.check('sale-auth-confirm','I reviewed the recipient and release arrangement')+R.actions([{id:'sale-auth-save',label:'Issue release authorization',kind:'primary'},{id:'sale-auth-back',label:'Back to order',kind:'secondary'}]);
-    body.querySelector('[data-mode]').value=b.mode||'pickup';body.querySelector('#sale-partial').checked=!!b.partial;
-    async function save(){['recipient','reference','hours','area','notes','mode'].forEach(function(k){b[k]=body.querySelector('[data-'+k+']').value;});b.partial=body.querySelector('#sale-partial').checked;await mWorkflow.save(saved);}
-    body.querySelectorAll('input,select').forEach(function(el){el.onchange=function(){save().catch(function(e){mToast(e.message,'err');});};});body.querySelector('#sale-auth-back').onclick=function(){go({id:id});};
-    body.querySelector('#sale-auth-save').onclick=async function(){try{await save();if(!body.querySelector('#sale-auth-confirm').checked||!b.recipient.trim()||!Number.isFinite(Number(b.hours))||Number(b.hours)<1||Number(b.hours)>336)throw Error('Confirm the recipient and a validity of 1–336 hours.');this.disabled=true;await mWorkflow.start(saved,{path:'/release-slips/orders/'+id+'/authorizations',payload:{mode:b.mode,recipient_name:b.recipient.trim(),id_reference:(b.reference||'').replace(/[^a-z0-9]/gi,'').slice(-4),valid_hours:Number(b.hours),handoff_area:b.area||null,notes:b.notes||null,partial_allowed:!!b.partial},title:'Authorize handoff for '+order.number,role:'Sales',reviewRoute:'sales',reviewParams:{id:id}});if(body.isConnected)mWorkflow.paint(view,saved);}catch(e){this.disabled=false;mToast(e.message,'err');}};
+    var body=page(view,'Authorize release','Sales decides who may receive the goods',true);window.mQuickOrbit?.focusTask?.(body);
+    var saved=await mWorkflow.draft('sale-authorization-'+id);if(!body.isConnected)return;
+    if(saved.operation.state!=='draft')return mWorkflow.paint(view,saved);
+    var reads=await Promise.all([API.get('/orders/'+id),API.get('/release-slips/receivers')]),order=reads[0],receivers=reads[1],b=saved.batch;
+    if(!body.isConnected)return;if(order.type!=='sale')throw Error('Customer JO records are read-only in Sales.');
+    body.innerHTML=R.jobHead({number:order.number,name:order.customer_name||'Sales order',meta:'Authorization does not move stock'})+
+      '<label class="rk-card rk-field"><small>Who receives the goods?</small><select data-handoff_type><option value="external">Customer / third-party collection</option><option value="internal">Assigned staff handoff</option></select></label>'+
+      '<p class="m-hint" data-policy></p><div class="m-flow-section" data-external>'+field('Approved recipient *','recipient',b.recipient)+field('ID reference (last four only)','reference',b.reference)+'</div>'+
+      '<label class="rk-card rk-field" data-staff hidden><small>Assigned active staff receiver *</small><select data-receiver_user_id><option value="">Choose staff receiver</option>'+receivers.map(function(u){return '<option value="'+u.id+'">'+mEsc(u.full_name)+'</option>';}).join('')+'</select></label>'+
+      '<label class="rk-card rk-field"><small>Transport</small><select data-mode><option value="pickup">Pickup / handoff at warehouse</option><option value="delivery">Delivery</option></select></label>'+
+      field('Valid hours (1–336)','hours',b.hours||24,'number')+field('Handoff area','area',b.area)+
+      '<details class="rk-card"><summary>Partial trips and Sales notes</summary>'+R.check('sale-partial','Allow separate trips; the remainder stays on this order')+field('Sales notes','notes',b.notes)+'</details>'+
+      R.note('warn','Issuing replaces any unused authorization. Releasing still checks the physical goods and records each trip.')+
+      R.check('sale-auth-confirm','I checked the receiver and release arrangement')+
+      '<p id="sale-auth-error" class="m-ux-inline-error" role="alert" hidden></p>'+
+      R.actions([{id:'sale-auth-save',label:'Issue release authorization',kind:'primary'},{id:'sale-auth-back',label:'Back to order',kind:'secondary'}]);
+    body.querySelector('[data-recipient]').placeholder='Name approved by Sales';body.querySelector('[data-recipient]').maxLength=120;body.querySelector('[data-reference]').maxLength=4;
+    var button=body.querySelector('#sale-auth-save'),error=body.querySelector('#sale-auth-error');
+    ['mode','handoff_type','receiver_user_id'].forEach(function(k){body.querySelector('[data-'+k+']').value=b[k]||(k==='mode'?'pickup':k==='handoff_type'?'external':'');});
+    body.querySelector('#sale-partial').checked=!!b.partial;
+    function policy(){var internal=body.querySelector('[data-handoff_type]').value==='internal';body.querySelector('[data-external]').hidden=internal;body.querySelector('[data-staff]').hidden=!internal;body.querySelector('[data-policy]').textContent=internal?'The assigned staff receiver signs at handoff. No release code is issued.':'Sales issues a release code to give to the approved recipient. Releasing verifies it at handoff.';}
+    async function save(){['recipient','reference','hours','area','notes','mode','handoff_type','receiver_user_id'].forEach(function(k){b[k]=body.querySelector('[data-'+k+']').value;});b.partial=body.querySelector('#sale-partial').checked;await mWorkflow.save(saved);}
+    body.querySelectorAll('input,select').forEach(function(el){el.onchange=function(){policy();save().catch(function(e){mScreenUX.reject(button,error,e.message);});};});policy();
+    body.querySelector('#sale-auth-back').onclick=function(){go({id:id});};
+    button.onclick=async function(event){if(button.disabled)return;button.disabled=true;try{
+      await save();var internal=b.handoff_type==='internal';
+      if(internal&&!receivers.some(function(u){return u.id===Number(b.receiver_user_id);}))throw Error('Choose an active staff receiver. They must sign when the goods are handed over.');
+      if(!internal&&!b.recipient.trim())throw Error('Enter the approved recipient. Give them the release code after issuing.');
+      if(!Number.isFinite(Number(b.hours))||Number(b.hours)<1||Number(b.hours)>336)throw Error('Set authorization validity from 1 to 336 hours.');
+      if(!body.querySelector('#sale-auth-confirm').checked)throw Error('Confirm that you checked the receiver and release arrangement.');
+      if(navigator.onLine===false)throw Error('Reconnect before issuing this authorization. Your draft is saved.');
+      this.disabled=true;
+      await mWorkflow.start(saved,{path:'/release-slips/orders/'+id+'/authorizations',payload:{mode:b.mode,handoff_type:b.handoff_type,receiver_user_id:internal?Number(b.receiver_user_id):null,recipient_name:internal?'':b.recipient.trim(),id_reference:internal?null:(b.reference||'').replace(/[^a-z0-9]/gi,'').slice(-4),valid_hours:Number(b.hours),handoff_area:b.area||null,notes:b.notes||null,partial_allowed:!!b.partial},title:'Authorize handoff for '+order.number,role:'Sales',reviewRoute:'sales',reviewParams:{id:id}});
+      if(body.isConnected)mWorkflow.paint(view,saved);
+    }catch(e){this.disabled=false;mScreenUX.reject(this,error,e.message,event);}};
   }
   async function customers(view,params){
     var body=page(view,'Customers','Customer registry and recent orders');

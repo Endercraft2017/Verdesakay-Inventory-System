@@ -63,3 +63,23 @@ the review does not push or deploy the application.
 Machine-readable browser evidence lives in ignored `work/ui-scratch/` and the
 baseline matrix in `work/mobile-layout-audit/`. The interactive review includes
 the tested source hashes, current results, limitations and route inspector.
+
+## Commit/push integration check
+
+Before pushing, fetched remote `eb7db05` and merged the newer Sales release work.
+Kept its combined handoff/signature flow, allocation workspace and backend rules;
+retained the shared action stylesheet as the owner of standard button geometry.
+Both review builders remain available under their documented command aliases.
+
+Post-merge TypeScript passed. The focused 12-suite run had 322 passing tests and
+13 failures in the older `frontend-mobile.test.ts` Sales release cases. A separate
+detached checkout of remote `eb7db05` reproduced exactly the same 13 named failures
+and the same missing JSDOM animation API error; these are not a green test suite
+and remain unresolved. No assertions were disabled or weakened for the merge.
+
+Fresh post-merge browser checks passed all 342 destination/width/theme samples
+and six populated-kit cases with 147 source hashes matched. Separate real-browser,
+disposable-backend checks passed five internal/external handoff scenarios with
+four axe scans, plus four Sales authorization/partial-trip scenarios. The earlier
+50-check portable review report applies to the pre-merge reviewed source; the
+private hosted preview was not republished as part of this Git operation.

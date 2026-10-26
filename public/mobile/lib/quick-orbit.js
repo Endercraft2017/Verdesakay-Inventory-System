@@ -116,7 +116,7 @@
     button.style.left=p[0]+'px';button.style.top=p[1]+'px';
   }
   // Keep the original floating control independent of a form's action layout.
-  var avoidance=null,avoidBefore=null,avoidAuto=false;
+  var avoidance=null,avoidBefore=null,avoidAuto=false,taskFocus=null;
   function avoidFooter(p){
     if(!avoidance?.isConnected||!orbit)return p;var d=avoidance.getBoundingClientRect(),r=orbit.getBoundingClientRect(),v=viewport();
     if(p.x<d.right+8&&p.x+r.width>d.left-8&&p.y<d.bottom+8&&p.y+r.height>d.top-8)p.y=Math.max(v.y+76,d.top-r.height-12);
@@ -218,7 +218,7 @@
   }
   function syncVisibility(){
     if(!orbit)return;if(setup){if(profileOwner!==owner()||document.getElementById('m-app')?.matches('.hidden,[hidden]'))close(true);else return;}var app=document.getElementById('m-app'),entry=document.activeElement,keyboard=!!(entry&&/^(INPUT|TEXTAREA|SELECT)$/.test(entry.tagName))||!!(window.visualViewport&&window.visualViewport.height<window.innerHeight*.72);
-    var hidden=keyboard||!!app?.matches('.hidden,[hidden]')||document.body.classList.contains('m-chat-thread-active')||document.body.classList.contains('personal-editor-open');
+    var hidden=keyboard||!!(taskFocus?.isConnected&&!taskFocus.hidden)||!!app?.matches('.hidden,[hidden]')||document.body.classList.contains('m-chat-thread-active')||document.body.classList.contains('personal-editor-open');
     if(!avoidance?.isConnected&&avoidance)setAvoidance(null);if(hidden)close(true);orbit.classList.toggle('is-keyboard',keyboard);if(orbit.hidden!==hidden)orbit.hidden=hidden;if(!hidden)alignAvoidance();
   }
   function init(){
@@ -240,5 +240,5 @@
     var observer=new MutationObserver(syncVisibility);observer.observe(document.body,{attributes:true,attributeFilter:['class']});var app=document.getElementById('m-app');if(app)observer.observe(app,{attributes:true,attributeFilter:['class','hidden']});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
-  window.mQuickOrbit={refresh:renderActions,close:close,setAvoidance:setAvoidance};
+  window.mQuickOrbit={refresh:renderActions,close:close,setAvoidance:setAvoidance,focusTask:function(element){taskFocus=element;syncVisibility();}};
 })();

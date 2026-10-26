@@ -106,7 +106,8 @@ function openConnection(slug: string): DatabaseSync {
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
 // 96: job recording assignments and the one-time role/CSR/privacy migration.
 // 97: financial draft editor attribution and targeted default-role corrections.
-export const SCHEMA_VERSION = 97; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+// 98: explicit external/internal release authority, assigned staff and signed evidence.
+export const SCHEMA_VERSION = 98; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -1649,6 +1650,8 @@ function createSchema(): void {
       order_id        INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       mode            TEXT NOT NULL CHECK (mode IN ('pickup', 'delivery')),
       recipient_name  TEXT NOT NULL,
+      handoff_type    TEXT NOT NULL DEFAULT 'external' CHECK (handoff_type IN ('external','internal')),
+      receiver_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       id_last4        TEXT,
       token           TEXT NOT NULL,
       valid_until     TEXT NOT NULL,
@@ -1679,6 +1682,9 @@ function createSchema(): void {
       authorization_id   INTEGER REFERENCES release_authorizations(id) ON DELETE SET NULL,
       mode               TEXT,
       recipient_name     TEXT,
+      handoff_type       TEXT NOT NULL DEFAULT 'external' CHECK (handoff_type IN ('external','internal')),
+      receiver_user_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      signature_attachment_id INTEGER REFERENCES attachments(id) ON DELETE RESTRICT,
       handoff_area       TEXT,
       seal_tag           TEXT,
       package            TEXT,
@@ -2169,6 +2175,16 @@ function migrate(): void {
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY(job_order_id,user_id)
   )`);
+  // v98: additive, idempotent migration. Existing authorizations/slips stay external.
+  // https://www.sqlite.org/lang_altertable.html#alter_table_add_column
+  // ADD COLUMN permits a non-null default; REFERENCES columns default NULL.
+  for (const [table, columns] of Object.entries({
+    release_authorizations: {handoff_type:"TEXT NOT NULL DEFAULT 'external' CHECK (handoff_type IN ('external','internal'))",receiver_user_id:'INTEGER REFERENCES users(id) ON DELETE SET NULL'},
+    release_slip_details: {handoff_type:"TEXT NOT NULL DEFAULT 'external' CHECK (handoff_type IN ('external','internal'))",receiver_user_id:'INTEGER REFERENCES users(id) ON DELETE SET NULL',signature_attachment_id:'INTEGER REFERENCES attachments(id) ON DELETE RESTRICT'},
+  })) {
+    const present=new Set((db.prepare(`PRAGMA table_info(${table})`).all() as {name:string}[]).map(c=>c.name));
+    for(const [name,type] of Object.entries(columns))if(!present.has(name))db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
   const formCols = new Set((db.prepare('PRAGMA table_info(form_definitions)').all() as {name:string}[]).map(c=>c.name));
   for (const [name, type] of Object.entries({entry_access:"TEXT NOT NULL DEFAULT '{\"roles\":[],\"users\":[]}'",access_revision:'INTEGER NOT NULL DEFAULT 1',version:'INTEGER NOT NULL DEFAULT 1',updated_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',version_reason:'TEXT',archived_at:'TEXT',archived_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',archive_reason:'TEXT'})) {
     if (!formCols.has(name)) db.exec(`ALTER TABLE form_definitions ADD COLUMN ${name} ${type}`);

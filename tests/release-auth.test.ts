@@ -228,6 +228,8 @@ describe('partial release', () => {
     expect(orig.items[0]).toMatchObject({quantity:2,dispatched_qty:1,cancelled_qty:0});
     expect(orig.total).toBe(200);
     expect(orig.fulfillment).toMatchObject({remaining:1,dispatched:1,state:'partially_fulfilled'});
+    const listing=(await ctx.api.get('/api/orders?type=sale').set(H())).body.find((r:{id:number})=>r.id===so);
+    expect(listing).toMatchObject({fulfillment_remaining:1,fulfillment_dispatched:1});
 
   });
 });
@@ -254,5 +256,153 @@ describe('scan check and reports', () => {
     const row = [...q.body.to_accept, ...q.body.releasing].find((r: { id: number }) => r.id === b);
     expect(row.open_reports).toBe(1);
     expect((await ctx.api.post(`/api/release-slips/reports/${rep.body.id}/resolve`).set(H()).send({ resolution: 'Rescanned' })).status).toBe(200);
+  });
+});
+
+/** The Sales-issued assignment selects the policy. Requests cannot choose a weaker path. */
+describe('internal staff handoff', () => {
+  let db: typeof import('../src/shared/db');
+  let receiver: Awaited<ReturnType<typeof createEmployee>>;
+  beforeAll(async () => {
+    db = await import('../src/shared/db');
+    receiver = await createEmployee(ctx.api, token, { role: 'driver', full_name: 'Assigned staff receiver' });
+    await ctx.api.put('/api/release-slips/policy').set(H()).send({ authorization_required: true });
+  });
+  async function assigned(prefix: string, checklist = false) {
+    const { product, codes } = await productWithUnits(prefix, 1);
+    if (checklist) await ctx.api.put(`/api/finished-products/${product}/package`).set(H())
+      .send({ items: [{ label: 'Keys', required: true }] });
+    const so = await approvedOrder(product, 1);
+    const issued = await issue(so, { handoff_type: 'internal', receiver_user_id: receiver.id, recipient_name: 'Untrusted free text' });
+    expect(issued.status).toBe(201);
+    await ctx.api.post(`/api/orders/${so}/release`).set(bearer(releaser.token)).send({ codes });
+    const authorization = issued.body.authorization;
+    const payload = { handoff_type: 'internal', authorization_id: authorization.id, receiver_user_id: receiver.id,
+      acknowledged: true, collected_by: 'Another untrusted name' };
+    return { so, product, authorization, payload, issued };
+  }
+  async function signature(authId: number, headers = bearer(releaser.token)) {
+    const res = await ctx.api.post('/api/attachments').set(headers).field('kind', 'release_acknowledgment')
+      .field('ref_id', String(authId)).attach('image', PNG, 'signed.png');
+    expect(res.status).toBe(201);
+    return res.body.id as number;
+  }
+  it('migrates legacy authorizations and slips as external, and can run twice', async () => {
+    // Reproduce the v97 shapes, retaining real legacy authorization/slip rows from the tests above.
+    const columns = {
+      release_authorizations: ['receiver_user_id', 'handoff_type'],
+      release_slip_details: ['signature_attachment_id', 'receiver_user_id', 'handoff_type'],
+    };
+    const before = db.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM release_authorizations')!.n;
+    expect(before).toBeGreaterThan(0);
+    for (const [table, names] of Object.entries(columns)) for (const name of names) db.db.exec(`ALTER TABLE ${table} DROP COLUMN ${name}`);
+    db.forceMigrate('default');
+    db.forceMigrate('default');
+    expect(db.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM release_authorizations')!.n).toBe(before);
+    expect(db.queryOne<{ n: number }>("SELECT COUNT(*) AS n FROM release_authorizations WHERE handoff_type!='external' OR receiver_user_id IS NOT NULL")!.n).toBe(0);
+    expect(db.queryOne<{ n: number }>("SELECT COUNT(*) AS n FROM release_slip_details WHERE handoff_type!='external' OR signature_attachment_id IS NOT NULL")!.n).toBe(0);
+  });
+  it('requires Sales permission and an active assigned staff account; no code is issued', async () => {
+    const { so, issued } = await assigned('INT1');
+    expect(issued.body.token).toBeNull();
+    expect(issued.body.authorization).toMatchObject({ handoff_type: 'internal', receiver_user_id: receiver.id,
+      recipient_name: 'Assigned staff receiver', token_required: false, token_hint: null, receiver_active: true });
+    expect((await ctx.api.get('/api/release-slips/receivers').set(H())).body).toContainEqual({ id: receiver.id, full_name: 'Assigned staff receiver' });
+    expect((await ctx.api.get('/api/release-slips/receivers').set(bearer(releaser.token))).status).toBe(403);
+    expect((await ctx.api.post(`/api/release-slips/orders/${so}/authorizations`).set(bearer(releaser.token))
+      .send({ mode: 'pickup', handoff_type: 'internal', receiver_user_id: receiver.id })).status).toBe(403);
+    expect((await issue(so, { handoff_type: 'internal', receiver_user_id: null })).status).toBe(400);
+    expect((await issue(so, { handoff_type: 'internal', receiver_user_id: 999999 })).status).toBe(400);
+    db.run('UPDATE users SET active=0 WHERE id=?', receiver.id);
+    expect((await issue(so, { handoff_type: 'internal', receiver_user_id: receiver.id })).status).toBe(400);
+    db.run('UPDATE users SET active=1 WHERE id=?', receiver.id);
+    expect((await ctx.api.get(`/api/release-slips/orders/${so}/authorizations`).set(bearer(releaser.token))).body.history[0].token).toBeNull();
+    expect((await ctx.api.get(`/api/release-slips/orders/${so}/verify-token?token=anything`).set(bearer(releaser.token))).body).toMatchObject({ ok: false, error: expect.stringContaining('assigned-receiver acknowledgment') });
+  });
+  it('cannot switch an external authorization to an internal request or use an internal token override', async () => {
+    const { so, payload } = await assigned('INT2');
+    expect((await ctx.api.post(`/api/release-slips/orders/${so}/override-request`).set(bearer(releaser.token))
+      .send({ reason: 'Skip signature' })).status).toBe(409);
+    expect((await ctx.api.post(`/api/release-slips/orders/${so}/override`).set(H())
+      .send({ reason: 'Skip signature' })).status).toBe(409);
+    const external = await issue(so);
+    expect(external.body.authorization).toMatchObject({ handoff_type: 'external', token_required: true });
+    expect((await slip(so, { ...payload, authorization_id: external.body.authorization.id })).body.blocked).toBe('authorization');
+    expect((await slip(so, { handoff_type: 'external' })).body.blocked).toBe('authorization');
+    expect((await slip(so, { authorization_token: external.body.token })).status).toBe(201);
+  });
+  it('requires the exact active receiver, a real uploaded signature and explicit acknowledgment', async () => {
+    const { so, product, authorization, payload } = await assigned('INT3');
+    const before = await onHand(product);
+    expect((await slip(so, payload)).body.blocked).toBe('acknowledgment');
+    const ordinary = await ctx.api.post('/api/attachments').set(bearer(releaser.token)).field('kind', 'release_proof')
+      .field('ref_id', String(so)).attach('image', PNG, 'photo.png');
+    expect((await slip(so, { ...payload, signature_attachment_id: ordinary.body.id })).body.blocked).toBe('acknowledgment');
+    const sig = await signature(authorization.id);
+    expect((await slip(so, { ...payload, receiver_user_id: releaser.id, signature_attachment_id: sig })).body.blocked).toBe('receiver');
+    expect((await slip(so, { ...payload, acknowledged: false, signature_attachment_id: sig })).body.blocked).toBe('acknowledgment');
+    expect((await slip(so, { ...payload, authorization_id: authorization.id + 999, signature_attachment_id: sig })).body.blocked).toBe('authorization');
+    db.run('UPDATE users SET active=0 WHERE id=?', receiver.id);
+    expect((await slip(so, { ...payload, signature_attachment_id: sig })).body.blocked).toBe('receiver');
+    expect((await ctx.api.get(`/api/release-slips/orders/${so}/context`).set(bearer(releaser.token))).body.authorization.receiver_active).toBe(false);
+    db.run('UPDATE users SET active=1 WHERE id=?', receiver.id);
+    expect(await onHand(product)).toBe(before);
+    expect(db.queryOne('SELECT 1 FROM release_slips WHERE order_id=?', so)).toBeUndefined();
+  });
+  it('rejects empty signatures and signatures from another order or an old assignment', async () => {
+    const a = await assigned('INT4A'), b = await assigned('INT4B');
+    const oldSig = await signature(a.authorization.id);
+    const empty = await ctx.api.post('/api/attachments').set(bearer(releaser.token)).field('kind', 'release_acknowledgment')
+      .field('ref_id', String(b.authorization.id)).attach('image', Buffer.alloc(0), 'empty.png');
+    expect(empty.status).toBe(409);
+    expect((await slip(b.so, { ...b.payload, signature_attachment_id: oldSig })).body.blocked).toBe('acknowledgment');
+    const replacement = await issue(a.so, { handoff_type: 'internal', receiver_user_id: releaser.id });
+    expect((await slip(a.so, { ...a.payload, signature_attachment_id: oldSig })).body.blocked).toBe('authorization');
+    expect((await slip(a.so, { ...a.payload, authorization_id: replacement.body.authorization.id,
+      receiver_user_id: releaser.id, signature_attachment_id: oldSig })).body.blocked).toBe('acknowledgment');
+    const staleUpload = await ctx.api.post('/api/attachments').set(bearer(releaser.token)).field('kind', 'release_acknowledgment')
+      .field('ref_id', String(a.authorization.id)).attach('image', PNG, 'stale.png');
+    expect(staleUpload.status).toBe(409);
+    expect(await onHand(a.product)).toBe(1);
+    expect(await onHand(b.product)).toBe(1);
+  });
+  it('continues to enforce expiry, revocation and package requirements without a code', async () => {
+    const { so, product, authorization, payload } = await assigned('INT5', true);
+    const sig = await signature(authorization.id);
+    const signed = { ...payload, signature_attachment_id: sig };
+    expect((await slip(so, signed)).body).toMatchObject({ blocked: 'package', missing: ['Bike: Keys'] });
+    db.run("UPDATE release_authorizations SET valid_until=datetime('now','-1 minute') WHERE id=?", authorization.id);
+    expect((await slip(so, signed)).body.blocked).toBe('authorization');
+    db.run("UPDATE release_authorizations SET valid_until=datetime('now','+1 hour'),revoked_at=datetime('now') WHERE id=?", authorization.id);
+    expect((await slip(so, signed)).body.blocked).toBe('authorization');
+    expect(await onHand(product)).toBe(1);
+  });
+  it('records a signed internal handoff atomically and replays the same request without another stock movement', async () => {
+    const { so, product, authorization, payload } = await assigned('INT6', true);
+    const sig = await signature(authorization.id);
+    const proof = await ctx.api.post('/api/attachments').set(bearer(releaser.token)).field('kind', 'release_proof')
+      .field('ref_id', String(so)).attach('image', PNG, 'handoff.png');
+    const body = { ...payload, signature_attachment_id: sig, evidence_ids: [proof.body.id], package: [{ item_id: product, label: 'Keys', ok: true }] };
+    const submit = () => ctx.api.post(`/api/orders/${so}/release-slip`).set({ ...bearer(releaser.token), 'X-Client': 'mobile' })
+      .set('Idempotency-Key', `internal-signed-${so}`).send(body);
+    const invalidTrip = await slip(so, { ...body, delivery_id: 999999 });
+    expect(invalidTrip.status).toBe(409);
+    expect(await onHand(product)).toBe(1);
+    expect(db.queryOne('SELECT kind,ref_id FROM attachments WHERE id=?', sig)).toEqual({ kind: 'release_acknowledgment', ref_id: authorization.id });
+    expect(db.queryOne('SELECT used_slip_id FROM release_authorizations WHERE id=?', authorization.id)).toEqual({ used_slip_id: null });
+    const result = await submit();
+    expect(result.status).toBe(201);
+    expect(await onHand(product)).toBe(0);
+    const saved = (await ctx.api.get(`/api/release-slips/${result.body.id}`).set(H())).body;
+    expect(saved).toMatchObject({ handoff_type: 'internal', receiver_user_id: receiver.id, signature_attachment_id: sig,
+      acknowledged: 1, collected_by: 'Assigned staff receiver', approved_receiver_name: 'Assigned staff receiver' });
+    expect(db.queryOne('SELECT kind,ref_id FROM attachments WHERE id=?', sig)).toEqual({ kind: 'release', ref_id: result.body.id });
+    expect((await ctx.api.delete(`/api/attachments/${sig}`).set(bearer(releaser.token))).status).toBe(409);
+    const replay = await submit();
+    expect(replay.status).toBe(201);
+    expect(replay.body.id).toBe(result.body.id);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+    expect(await onHand(product)).toBe(0);
+    expect(db.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM release_slips WHERE order_id=?', so)!.n).toBe(1);
   });
 });

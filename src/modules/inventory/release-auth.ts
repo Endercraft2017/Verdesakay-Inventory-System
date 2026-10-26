@@ -23,6 +23,8 @@ export interface ReleaseAuthorization {
   order_id: number;
   mode: 'pickup' | 'delivery';
   recipient_name: string;
+  handoff_type: 'external' | 'internal';
+  receiver_user_id: number | null;
   id_last4: string | null;
   token: string;
   valid_until: string;
@@ -90,8 +92,10 @@ export function publicAuthorization(orderId: number) {
       decided_by_name: ov.decided_by_name ?? null, decision_note: ov.decision_note, decided_at: ov.decided_at } : null,
     state, required: authorizationRequired(),
     id: auth.id, mode: auth.mode, recipient_name: auth.recipient_name,
+    handoff_type: auth.handoff_type,receiver_user_id:auth.receiver_user_id,token_required:auth.handoff_type!=='internal',
+    receiver_active:auth.handoff_type==='internal'?!!queryOne('SELECT 1 FROM users WHERE id=? AND active=1',auth.receiver_user_id):null,
     id_reference: auth.id_last4 ? '••' + auth.id_last4 : null,
-    token_hint: auth.token.split('-')[0] + '-••••', valid_until: auth.valid_until,
+    token_hint: auth.handoff_type==='internal'?null:auth.token.split('-')[0] + '-••••', valid_until: auth.valid_until,
     handoff_area: auth.handoff_area, partial_allowed: !!auth.partial_allowed,
     revoke_reason: auth.revoke_reason,
   };
@@ -104,6 +108,7 @@ export function tokenError(orderId: number, token: string | null | undefined): s
   if (state === 'revoked') return 'The release authorization was revoked' + (auth.revoke_reason ? `: ${auth.revoke_reason}` : '.');
   if (state === 'used') return 'This release authorization was already used.';
   if (state === 'expired') return 'The release authorization has expired. Ask Sales to issue a new one.';
+  if (auth.handoff_type==='internal') return 'Internal staff handoff uses assigned-receiver acknowledgment, not a release code.';
   if (!token || token.trim().toUpperCase() !== auth.token.toUpperCase()) return 'The release token does not match this order.';
   return null;
 }
@@ -128,16 +133,51 @@ export function missingPackageItems(orderId: number, confirmed: { item_id: numbe
 }
 
 /** Everything the slip must satisfy beyond "every line released" (checked by the route). */
-export function slipError(orderId: number, input: { authorization_token?: string | null; package?: { item_id: number; label: string; ok: boolean }[]; shipping_item_ids?:number[] }):
-  { code: 'authorization' | 'package'; error: string; missing?: string[] } | null {
+export interface ReleaseHandoffInput {
+  authorization_token?: string | null;
+  authorization_id?: number | null;
+  handoff_type?: 'external' | 'internal';
+  receiver_user_id?: number | null;
+  signature_attachment_id?: number | null;
+  acknowledged?: boolean;
+  package?: { item_id: number; label: string; ok: boolean }[];
+  shipping_item_ids?: number[];
+}
+export function slipError(orderId: number, input: ReleaseHandoffInput):
+  { code: 'authorization' | 'package' | 'receiver' | 'acknowledgment'; error: string; missing?: string[] } | null {
   const { auth, state } = currentAuthorization(orderId);
-  if (auth || authorizationRequired()) {
-    const err = tokenError(orderId, input.authorization_token);
-    // A supervisor's approved override stands in for the token — never for a missing, revoked,
-    // expired or used authorization.
-    if (err && !(auth && state === 'valid' && latestOverride(auth.id)?.status === 'approved')) return { code: 'authorization', error: err };
+  const type = auth?.handoff_type || 'external';
+  // The Sales-issued authorization is authoritative; release payloads cannot switch paths.
+  if (input.handoff_type && input.handoff_type !== type) {
+    return { code: 'authorization', error: 'The handoff type does not match Sales authorization. Review the current order.' };
   }
-  const missing = missingPackageItems(orderId, input.package,input.shipping_item_ids);
+  if (input.authorization_id != null && input.authorization_id !== auth?.id) {
+    return { code: 'authorization', error: 'The release authorization changed. Review the current assignment before signing again.' };
+  }
+  if (auth && type === 'internal') {
+    if (state !== 'valid') {
+      return { code: 'authorization', error: `The internal handoff authorization is ${state}. Ask Sales to issue a valid assignment.` };
+    }
+    if (!auth.receiver_user_id || !queryOne('SELECT 1 FROM users WHERE id=? AND active=1', auth.receiver_user_id)) {
+      return { code: 'receiver', error: 'The assigned staff receiver is no longer active. Ask Sales to assign an active receiver.' };
+    }
+    if (input.receiver_user_id !== auth.receiver_user_id || input.authorization_id !== auth.id) {
+      return { code: 'receiver', error: 'Confirm the exact staff receiver assigned by Sales for this handoff.' };
+    }
+    const signed = input.signature_attachment_id && queryOne(
+      "SELECT 1 FROM attachments WHERE id=? AND kind='release_acknowledgment' AND ref_id=?",
+      input.signature_attachment_id, auth.id
+    );
+    if (!input.acknowledged || !signed) {
+      return { code: 'acknowledgment', error: 'Attach the assigned receiver’s signed acknowledgment for this authorization before handing over the goods.' };
+    }
+  } else if (auth || authorizationRequired()) {
+    const err = tokenError(orderId, input.authorization_token);
+    if (err && !(auth && state === 'valid' && latestOverride(auth.id)?.status === 'approved')) {
+      return { code: 'authorization', error: err };
+    }
+  }
+  const missing = missingPackageItems(orderId, input.package, input.shipping_item_ids);
   if (missing.length) return { code: 'package', error: `Confirm every required package item: ${missing.join(', ')}`, missing };
   return null;
 }

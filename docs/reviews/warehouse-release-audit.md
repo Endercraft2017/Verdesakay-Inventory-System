@@ -62,3 +62,81 @@ The following gaps remain in mobile implementation (also recorded in `MOBILE-INV
 - Focused integration: order release, release slips, authorization, offline sale sync, mobile route/role UI, desktop order UI. New cases cover another sale's commitment, repeated bulk entries, serialized bulk refusal, service-only sales and stock changing after allocation.
 - TypeScript and JavaScript syntax checks passed. A real Chromium session exercised desktop acceptance, bulk allocation, undo and reallocation at 1365 px, the desktop shell at 390 px, and the mobile release blocked queue at 390 px, with no page errors or document-width overflow.
 - `npm run check` passed: 229 test files, 2,430 tests. Focused release, inventory, delivery, offline-sync and accounting tests also passed after the new guards.
+
+## 2026-10-26: explicit external collection and internal staff acknowledgment
+
+Sales now issues `handoff_type: external | internal` separately from the existing
+pickup/delivery transport mode. External is the default for existing rows and
+legacy requests. It retains the recipient code, expiry/revocation and existing
+supervisor token exception. The company setting permitting orders without an
+authorization is preserved; an issued authorization still enforces its own path.
+
+Internal issuance requires `orders.authorize` and an active `receiver_user_id`.
+The server derives the approved name from that account and returns no code.
+Releasing cannot switch the policy using its release request. Internal dispatch
+requires the current authorization ID, its exact active receiver, explicit
+acknowledgment and `signature_attachment_id`. That attachment must have been
+uploaded as `release_acknowledgment` against that exact authorization ID. A normal
+handoff photo, another order's signature, an earlier assignment's signature or
+`acknowledged: true` alone cannot satisfy it. Token overrides do not apply.
+
+Package requirements and app handoff photos remain required. The final transaction
+stores the receiver/name snapshot and signature reference, moves staged evidence
+to the immutable slip, consumes the authorization and dispatches stock. Failures
+roll everything back. Native desktop/mobile clients send these fields, mobile
+clears old signatures when authorization changes, and persisted handoff retries
+retain their original upload keys and final request. Internal authority/signature
+errors cannot use the external physical-fact exception during site replay; they
+require reconciliation. A valid offline-host signature and slip sync successfully.
+
+Schema v98 adds columns with an external default and nullable references; migration
+is idempotent and does not weaken old external authorizations. SQLite's official
+ADD COLUMN constraints informed the migration:
+<https://www.sqlite.org/lang_altertable.html#alter_table_add_column>.
+
+Verification: 66 focused API tests passed across authorization, slips, allocation,
+batches and site sync, including a v97-shaped database migrated twice. Five native
+mobile browser scenarios against disposable real handlers cover both policies,
+assignment replacement, signature upload binding and lost-success-response
+reload/retry; four axe scans cover both themes at 320/390px. Hosted checks are
+recorded separately in the preview. These are simulated files/camera callbacks
+and fictional disposable records, not production evidence or staff validation.
+Retaining an image does not establish who physically signed it; releasing staff
+must identify the assigned receiver at handoff.
+
+## 2026-10-26: finish mobile Sales-to-Releasing review
+
+Mobile Sales now uses the typed external/internal authorization contract and the
+existing durable workflow helper. Internal assignment is selectable on mobile,
+with no misleading blank code field. Blocked issuance has persistent red inline
+feedback; pending issuance prevents repeated activation. The release queue uses
+the shared stage dropdown and correct code/signature labels.
+
+Order list reads now include authoritative `fulfillment_remaining` and
+`fulfillment_dispatched` quantities. Both mobile Sales list routes use one shared
+stage calculation: a prior slip cannot mark an order complete while demand remains.
+Detail shows shipped, held and still-to-ship quantities per product/kit line.
+Trip selection keeps exact line/unit/batch controls and displays selected versus
+retained load quantities without changing allocation or stock rules.
+
+The handoff sequence is package checklist → Complete handoff (receiver verification,
+photo, signature) → Review and release (exact load, evidence and explicit physical
+handoff check). Old proof/review URLs resolve to these combined screens. Final
+confirmation still submits the original immutable warehouse-out handler. Complete
+CKD kits remain distinct from component counts, with component review disclosed
+12 lines at a time, including the synthetic 2,000-line case.
+
+The receipt exposes the saved receiver, acknowledgment/signature attachment,
+supervisor exception where applicable, exact goods and remaining-order action.
+Reports use the existing durable workflow store and identify Sales as the next
+owner. Internal acknowledgment cannot be replaced by a code exception, including
+through a direct URL. Shared task typography, focus behavior and controls retain
+the approved rounded green design; signature controls were corrected for touch
+size and dark-theme contrast. Quick actions yield during focused forms.
+
+Current executable evidence is embedded in the owner-private scratch proposal.
+The matched task reaches an enabled final release button in 3 screens rather than
+5, removing 2 navigation actions. Hosted writes are simulated; real signed
+handoff, lost-response recovery, Sales permissions and partial trips are checked
+separately against disposable real handlers. Physical staff, camera and packing
+acceptance remain outside these automated checks. No production rollout is made.

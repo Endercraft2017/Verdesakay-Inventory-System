@@ -52,3 +52,6 @@
 .m-batch-value-unit{max-width:calc(100% - 10px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .m-batch-balance [data-batch-after]{display:inline-block}.m-batch-balance [data-batch-after].stock-limit-feedback{color:var(--v2-danger)}
+
+/* Preparation number fields retain a full touch target inside their shared ratio panel. */
+.m-preparation-review .m-preparation-value input{min-width:44px}

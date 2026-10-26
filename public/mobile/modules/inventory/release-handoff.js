@@ -51,7 +51,8 @@
         guard(s);
         var row = s.rows[i];
         if (row.saved) continue;
-        var r = await mPhoto.attachBlob('release_proof', a.orderId, row.file, row.identifier,
+        var signature=a.payload.handoff_type==='internal'&&i===s.rows.length-1;
+        var r = await mPhoto.attachBlob(signature?'release_acknowledgment':'release_proof',signature?a.payload.authorization_id:a.orderId,row.file,row.identifier,
           i === s.rows.length - 1 ? 'Recipient acknowledgement' : 'Handoff proof', { idempotencyKey: a.key + ':photo:' + i });
         guard(s);
         row.unitId = r.id; row.saved = true;
@@ -59,7 +60,7 @@
       }
       guard(s);
       // Freeze and persist the exact body before its first submission.
-      if (!a.payload.evidence_ids) { a.payload.evidence_ids = s.rows.map(function (row) { return row.unitId; }); await mProductionDrafts.save(s); }
+      if (!a.payload.evidence_ids) { a.payload.evidence_ids = (a.payload.handoff_type==='internal'?s.rows.slice(0,-1):s.rows).map(function (row) { return row.unitId; });if(a.payload.handoff_type==='internal')a.payload.signature_attachment_id=s.rows[s.rows.length-1].unitId;await mProductionDrafts.save(s); }
       var result = await API.post('/orders/' + a.orderId + '/release-slip', a.payload, { idempotencyKey: a.key });
       guard(s);
       a.result = result; a.local = API.syncLocal(result); a.state = 'confirmed'; a.error = null;
@@ -79,7 +80,8 @@
     body.innerHTML = R.result(final ? 'Warehouse-out confirmed' : a.local ? 'Saved on site PC — confirmation pending' : a.state === 'rejected' ? 'Release refused' : 'Release confirmation unresolved',
       final ? 'Handoff photos and acknowledgement are attached to the release slip.' : 'Original evidence and release attempt are saved on this device.', final ? '' : 'queued', final ? '✓' : '⏳') +
       (a.result && a.result.backorder ? R.note('warn', 'Backorder ' + mEsc(a.result.backorder.number) + ' was created for the goods that did not leave.') : '') +
-      (a.error ? R.note('warn', mEsc(a.error)) : '') + R.note(final ? 'info' : 'warn', final ? 'Stock and release history were recorded together.' : a.state === 'conflict' ? 'Keep this attempt for supervisor reconciliation.' : 'Retry uses the same photos, signature, request and key. Do not hand over another set of goods.') +
+      (a.error ? '<p class="m-ux-inline-error" role="alert">'+mEsc(a.error)+'</p>' : '')+
+      (!final?R.field('Next step',a.state==='conflict'?'Supervisor: reconcile this saved attempt before another handoff.':a.state==='rejected'?'Releasing: review the current order and correct the stated blocker.':'Releasing: retry the original saved attempt when connected; confirmation is still unknown.'):'') + R.note(final ? 'info' : 'warn', final ? 'Stock and release history were recorded together.' : a.state === 'conflict' ? 'Keep this attempt for supervisor reconciliation.' : 'Retry uses the same photos, signature, request and key. Do not hand over another set of goods.') +
       R.actions((!a.local && ['new','sending','unknown'].indexOf(a.state) !== -1 ? [{ id: 'handoff-retry', label: 'Retry original release', kind: 'primary' }] : [])
         .concat(final || a.state === 'rejected' ? [{ id: 'handoff-review', label: final ? 'View receipt' : 'Review current order', kind: 'primary' }] : [])
         .concat([{ id: 'handoff-queue', label: 'Back to queue', kind: 'secondary' }])) + '<div data-sync></div>';
