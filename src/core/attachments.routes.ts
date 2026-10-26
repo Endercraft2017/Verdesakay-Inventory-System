@@ -22,7 +22,7 @@ import { sideEffectsSuppressed, siteDecisionStands } from '../shared/sync-contex
 const router = Router();
 router.use(requireAuth);
 
-const KINDS = new Set(['qc_unit', 'damage', 'problem', 'delivery', 'signature', 'release', 'release_proof', 'sales_return_proof', 'sales_return', 'parts_release', 'production_issue']);
+const KINDS = new Set(['qc_unit', 'damage', 'problem', 'delivery', 'signature', 'release', 'release_proof', 'release_acknowledgment', 'sales_return_proof', 'sales_return', 'parts_release', 'production_issue']);
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 /** Which permission(s) a kind needs. `[]` = any authenticated user. */
@@ -37,6 +37,7 @@ const READ_PERMS: Record<string, Permission[]> = {
   release: ['inventory.adjust', 'orders.release', 'orders.view'],
   // Handoff photos taken before the slip exists (ref_id = orders.id); the slip takes them over as 'release'.
   release_proof: ['inventory.adjust', 'orders.release', 'orders.view'],
+  release_acknowledgment:['inventory.adjust','orders.release','orders.view'],
   sales_return_proof: ['returns.receive','returns.inspect','returns.dispose','orders.release','orders.view'],
   sales_return: ['returns.receive','returns.inspect','returns.dispose','orders.release','orders.view'],
   // Photos of the parts kit on a job order's parts release slip (ref_id = parts_release_slips.id).
@@ -57,6 +58,7 @@ const WRITE_PERMS: Record<string, Permission[]> = {
   signature: ['delivery.run', 'delivery.manage'],
   release: ['orders.release'],
   release_proof: ['orders.release'],
+  release_acknowledgment:['orders.release'],
   sales_return_proof: ['returns.receive'],
   sales_return: ['returns.receive', 'returns.inspect'],
   parts_release: ['production.kit_release'],
@@ -176,6 +178,14 @@ router.post('/', syncClass('physical'), syncUpload(imageUpload.single('image')),
   }
   if (kind === 'qc_unit' && !queryOne('SELECT 1 FROM job_order_units WHERE id=?',refId)) {if(req.file)unlink(req.file.filename);res.status(404).json({error:'Production unit not found'});return;}
   if (kind === 'qc_unit' && queryOne("SELECT 1 FROM job_order_units WHERE id=? AND status NOT IN ('pending','rework')",refId)) {if(req.file)unlink(req.file.filename);res.status(409).json({error:'Completed unit evidence is locked'});return;}
+  if(kind==='release_acknowledgment'){
+    // ref_id identifies the exact assignment, not merely the order. A replaced
+    // receiver/authorization cannot inherit a signature collected for an earlier one.
+    const auth=queryOne(`SELECT a.id FROM release_authorizations a JOIN users u ON u.id=a.receiver_user_id
+      WHERE a.id=? AND a.handoff_type='internal' AND a.revoked_at IS NULL AND a.used_slip_id IS NULL
+      AND a.valid_until>=datetime('now') AND u.active=1`,refId);
+    if(!auth||!req.file?.size){if(req.file)unlink(req.file.filename);res.status(409).json({error:'A current internal receiver assignment and a non-empty signature image are required.'});return;}
+  }
   if (!req.file) {
     res.status(400).json({ error: 'An image file is required (JPG, PNG, GIF or WebP)' });
     return;

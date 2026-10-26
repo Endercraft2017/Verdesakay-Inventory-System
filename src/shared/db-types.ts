@@ -1401,6 +1401,8 @@ export interface ReleaseAuthorizations {
   order_id: number;
   mode: string;
   recipient_name: string;
+  handoff_type: Generated<string>;
+  receiver_user_id: number | null;
   id_last4: string | null;
   token: string;
   valid_until: string;
@@ -1434,6 +1436,9 @@ export interface ReleaseSlipDetails {
   authorization_id: number | null;
   mode: string | null;
   recipient_name: string | null;
+  handoff_type: Generated<string>;
+  receiver_user_id: number | null;
+  signature_attachment_id: number | null;
   handoff_area: string | null;
   seal_tag: string | null;
   package: string | null;

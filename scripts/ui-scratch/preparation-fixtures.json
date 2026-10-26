@@ -1,0 +1,5870 @@
+{
+  "generatedBy": "otom-preparation-api-fixture-v1",
+  "auditDate": "2026-10-26",
+  "timezone": "Asia/Manila",
+  "isolation": "Real API and disposable SQLite; all records fictional. No login or release-authority token is included.",
+  "profile": {
+    "id": 2,
+    "username": "prep_review_picker",
+    "full_name": "Fictional preparation clerk",
+    "role": "prep_review_picker",
+    "department_id": null,
+    "active": 1,
+    "password_change_required": 0,
+    "temporary_password_expires_at": null,
+    "department_name": null,
+    "permissions": [
+      "mobile.access",
+      "production.kit_release",
+      "inventory.view",
+      "inventory.mobile",
+      "orders.release"
+    ],
+    "role_label": "Fictional preparation clerk",
+    "employee": null,
+    "can_approve": false,
+    "modules": [
+      "inventory",
+      "sales",
+      "manufacturing",
+      "purchasing",
+      "hr",
+      "accounting",
+      "ai",
+      "mobile",
+      "email",
+      "quickbooks"
+    ],
+    "mfa_enabled": false,
+    "mfa_setup_required": false
+  },
+  "items": {
+    "1": {
+      "id": 1,
+      "name": "Fictional M8 flange bolt",
+      "sku": "PREP-BOLT",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 24,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 0,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:01",
+      "updated_at": "2026-10-26 07:32:01",
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 9,
+      "available_quantity": 14,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 5,
+          "item_id": 1,
+          "user_id": 1,
+          "change": 12,
+          "balance_after": 24,
+          "reason": "Disposable fixture source stock",
+          "location_id": 2,
+          "location_balance_after": 12,
+          "created_at": "2026-10-26 07:32:01",
+          "user_name": "System Administrator",
+          "location_name": "Fictional Assembly Stores"
+        },
+        {
+          "id": 1,
+          "item_id": 1,
+          "user_id": 1,
+          "change": 12,
+          "balance_after": 12,
+          "reason": "Initial stock",
+          "location_id": 1,
+          "location_balance_after": 12,
+          "created_at": "2026-10-26 07:32:01",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 2,
+          "location_name": "Fictional Assembly Stores",
+          "location_type": "warehouse",
+          "quantity": 12,
+          "is_default": 0,
+          "assembled_quantity": 12,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 0,
+          "available_quantity": 11,
+          "assembled_available": 11,
+          "semi_built_available": 0
+        },
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 12,
+          "is_default": 1,
+          "assembled_quantity": 12,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 9,
+          "available_quantity": 3,
+          "assembled_available": 3,
+          "semi_built_available": 0
+        }
+      ]
+    },
+    "2": {
+      "id": 2,
+      "name": "Fictional Control cable",
+      "sku": "PREP-CABLE",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 40,
+      "unit": "m",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 0,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:01",
+      "updated_at": "2026-10-26 07:32:01",
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 4,
+      "available_quantity": 36,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 6,
+          "item_id": 2,
+          "user_id": 1,
+          "change": 20,
+          "balance_after": 40,
+          "reason": "Disposable fixture source stock",
+          "location_id": 2,
+          "location_balance_after": 20,
+          "created_at": "2026-10-26 07:32:01",
+          "user_name": "System Administrator",
+          "location_name": "Fictional Assembly Stores"
+        },
+        {
+          "id": 2,
+          "item_id": 2,
+          "user_id": 1,
+          "change": 20,
+          "balance_after": 20,
+          "reason": "Initial stock",
+          "location_id": 1,
+          "location_balance_after": 20,
+          "created_at": "2026-10-26 07:32:01",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 2,
+          "location_name": "Fictional Assembly Stores",
+          "location_type": "warehouse",
+          "quantity": 20,
+          "is_default": 0,
+          "assembled_quantity": 20,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 0,
+          "available_quantity": 20,
+          "assembled_available": 20,
+          "semi_built_available": 0
+        },
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 20,
+          "is_default": 1,
+          "assembled_quantity": 20,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 4,
+          "available_quantity": 16,
+          "assembled_available": 16,
+          "semi_built_available": 0
+        }
+      ]
+    },
+    "3": {
+      "id": 3,
+      "name": "Fictional Inline fuse",
+      "sku": "PREP-FUSE",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 8,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 0,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:01",
+      "updated_at": "2026-10-26 07:32:01",
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 1,
+      "available_quantity": 7,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 7,
+          "item_id": 3,
+          "user_id": 1,
+          "change": 4,
+          "balance_after": 8,
+          "reason": "Disposable fixture source stock",
+          "location_id": 2,
+          "location_balance_after": 4,
+          "created_at": "2026-10-26 07:32:01",
+          "user_name": "System Administrator",
+          "location_name": "Fictional Assembly Stores"
+        },
+        {
+          "id": 3,
+          "item_id": 3,
+          "user_id": 1,
+          "change": 4,
+          "balance_after": 4,
+          "reason": "Initial stock",
+          "location_id": 1,
+          "location_balance_after": 4,
+          "created_at": "2026-10-26 07:32:01",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 2,
+          "location_name": "Fictional Assembly Stores",
+          "location_type": "warehouse",
+          "quantity": 4,
+          "is_default": 0,
+          "assembled_quantity": 4,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 0,
+          "available_quantity": 4,
+          "assembled_available": 4,
+          "semi_built_available": 0
+        },
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 4,
+          "is_default": 1,
+          "assembled_quantity": 4,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 1,
+          "available_quantity": 3,
+          "assembled_available": 3,
+          "semi_built_available": 0
+        }
+      ]
+    },
+    "4": {
+      "id": 4,
+      "name": "Fictional Controller assembly",
+      "sku": "PREP-CTRL",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 6,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 1,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:01",
+      "updated_at": "2026-10-26 07:32:01",
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 4,
+      "available_quantity": 2,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 4,
+          "item_id": 4,
+          "user_id": 1,
+          "change": 6,
+          "balance_after": 6,
+          "reason": "Initial stock",
+          "location_id": 1,
+          "location_balance_after": 6,
+          "created_at": "2026-10-26 07:32:01",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 6,
+          "is_default": 1,
+          "assembled_quantity": 6,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 4,
+          "available_quantity": 2,
+          "assembled_available": 2,
+          "semi_built_available": 0
+        }
+      ]
+    },
+    "5": {
+      "id": 5,
+      "name": "Fictional Relay panel",
+      "sku": "PREP-RELAY",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 0,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 1,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:01",
+      "updated_at": "2026-10-26 07:32:01",
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 1,
+      "reserved_for_sales": 0,
+      "available_quantity": 0,
+      "preferred_location_name": "Main",
+      "history": [],
+      "stock": []
+    },
+    "6": {
+      "id": 6,
+      "name": "Fictional QR fixture source part",
+      "sku": "QR-SOURCE",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 980,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 0,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "unit_cost": 0,
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 0,
+      "available_quantity": 980,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 14,
+          "item_id": 6,
+          "user_id": 1,
+          "change": -16,
+          "balance_after": 980,
+          "reason": "MO-00004: released to production (PRS-00002)",
+          "location_id": 1,
+          "location_balance_after": 980,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        },
+        {
+          "id": 9,
+          "item_id": 6,
+          "user_id": 1,
+          "change": -4,
+          "balance_after": 996,
+          "reason": "MO-00003: released to production (PRS-00001)",
+          "location_id": 1,
+          "location_balance_after": 996,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        },
+        {
+          "id": 8,
+          "item_id": 6,
+          "user_id": 1,
+          "change": 1000,
+          "balance_after": 1000,
+          "reason": "Initial stock",
+          "location_id": 1,
+          "location_balance_after": 1000,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 980,
+          "is_default": 1,
+          "assembled_quantity": 980,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 0,
+          "available_quantity": 980,
+          "assembled_available": 980,
+          "semi_built_available": 0
+        }
+      ]
+    },
+    "7": {
+      "id": 7,
+      "name": "Fictional serialized controller",
+      "sku": "QR-SERIAL-CTRL",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 4,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 1,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "unit_cost": 0,
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 4,
+      "available_quantity": 0,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 13,
+          "item_id": 7,
+          "user_id": 1,
+          "change": 1,
+          "balance_after": 4,
+          "reason": "MO-00003: received (Products In PI-00001)",
+          "location_id": 1,
+          "location_balance_after": 4,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        },
+        {
+          "id": 12,
+          "item_id": 7,
+          "user_id": 1,
+          "change": 1,
+          "balance_after": 3,
+          "reason": "MO-00003: received (Products In PI-00001)",
+          "location_id": 1,
+          "location_balance_after": 3,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        },
+        {
+          "id": 11,
+          "item_id": 7,
+          "user_id": 1,
+          "change": 1,
+          "balance_after": 2,
+          "reason": "MO-00003: received (Products In PI-00001)",
+          "location_id": 1,
+          "location_balance_after": 2,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        },
+        {
+          "id": 10,
+          "item_id": 7,
+          "user_id": 1,
+          "change": 1,
+          "balance_after": 1,
+          "reason": "MO-00003: received (Products In PI-00001)",
+          "location_id": 1,
+          "location_balance_after": 1,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 4,
+          "is_default": 1,
+          "assembled_quantity": 4,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 4,
+          "available_quantity": 0,
+          "assembled_available": 0,
+          "semi_built_available": 0
+        }
+      ]
+    },
+    "8": {
+      "id": 8,
+      "name": "Fictional batch controller",
+      "sku": "QR-BATCH-CTRL",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 16,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 1,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "unit_cost": 0,
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 8,
+      "available_quantity": 8,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 16,
+          "item_id": 8,
+          "user_id": 1,
+          "change": 8,
+          "balance_after": 16,
+          "reason": "MO-00004: received (Products In PI-00002)",
+          "location_id": 1,
+          "location_balance_after": 16,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        },
+        {
+          "id": 15,
+          "item_id": 8,
+          "user_id": 1,
+          "change": 8,
+          "balance_after": 8,
+          "reason": "MO-00004: received (Products In PI-00002)",
+          "location_id": 1,
+          "location_balance_after": 8,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 16,
+          "is_default": 1,
+          "assembled_quantity": 16,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 8,
+          "available_quantity": 8,
+          "assembled_available": 8,
+          "semi_built_available": 0
+        }
+      ]
+    },
+    "9": {
+      "id": 9,
+      "name": "Fictional release-package controller",
+      "sku": "PREP-PACKAGE",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 1,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 1,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 1,
+      "available_quantity": 0,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 17,
+          "item_id": 9,
+          "user_id": 1,
+          "change": 1,
+          "balance_after": 1,
+          "reason": "Initial stock",
+          "location_id": 1,
+          "location_balance_after": 1,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 1,
+          "is_default": 1,
+          "assembled_quantity": 1,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 1,
+          "available_quantity": 0,
+          "assembled_available": 0,
+          "semi_built_available": 0
+        }
+      ]
+    },
+    "10": {
+      "id": 10,
+      "name": "Fictional internal-handoff controller",
+      "sku": "PREP-INTERNAL",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 1,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 1,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 1,
+      "available_quantity": 0,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 18,
+          "item_id": 10,
+          "user_id": 1,
+          "change": 1,
+          "balance_after": 1,
+          "reason": "Initial stock",
+          "location_id": 1,
+          "location_balance_after": 1,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 1,
+          "is_default": 1,
+          "assembled_quantity": 1,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 1,
+          "available_quantity": 0,
+          "assembled_available": 0,
+          "semi_built_available": 0
+        }
+      ]
+    },
+    "11": {
+      "id": 11,
+      "name": "Fictional trip controller",
+      "sku": "FLOW-TRIP",
+      "category": null,
+      "department_id": null,
+      "supplier_id": null,
+      "quantity": 9,
+      "unit": "pcs",
+      "min_quantity": 0,
+      "location": null,
+      "preferred_location_id": 1,
+      "notes": null,
+      "attributes": {},
+      "image_path": null,
+      "is_finished_product": 0,
+      "qc_checklist_qc_id": null,
+      "qc_checklist_qa_id": null,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "product_group": null,
+      "department_name": null,
+      "supplier_name": null,
+      "low_stock": 0,
+      "reserved_for_sales": 5,
+      "available_quantity": 4,
+      "preferred_location_name": "Main",
+      "history": [
+        {
+          "id": 20,
+          "item_id": 11,
+          "user_id": 2,
+          "change": -1,
+          "balance_after": 9,
+          "reason": "Sold — SO-00009 · release slip #1",
+          "location_id": 1,
+          "location_balance_after": 9,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "Fictional preparation clerk",
+          "location_name": "Main"
+        },
+        {
+          "id": 19,
+          "item_id": 11,
+          "user_id": 1,
+          "change": 10,
+          "balance_after": 10,
+          "reason": "Initial stock",
+          "location_id": 1,
+          "location_balance_after": 10,
+          "created_at": "2026-10-26 07:32:02",
+          "user_name": "System Administrator",
+          "location_name": "Main"
+        }
+      ],
+      "stock": [
+        {
+          "location_id": 1,
+          "location_name": "Main",
+          "location_type": "warehouse",
+          "quantity": 9,
+          "is_default": 1,
+          "assembled_quantity": 9,
+          "semi_built_quantity": 0,
+          "reserved_for_sales": 5,
+          "available_quantity": 4,
+          "assembled_available": 4,
+          "semi_built_available": 0
+        }
+      ]
+    }
+  },
+  "stock": {
+    "1": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 12,
+        "assembled_quantity": 12,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 11,
+        "assembled_available": 11,
+        "semi_built_available": 0,
+        "assembled_movable": 11,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 12,
+        "assembled_quantity": 12,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 9,
+        "available_quantity": 3,
+        "assembled_available": 3,
+        "semi_built_available": 0,
+        "assembled_movable": 3,
+        "semi_built_movable": 0
+      }
+    ],
+    "2": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 20,
+        "assembled_quantity": 20,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 20,
+        "assembled_available": 20,
+        "semi_built_available": 0,
+        "assembled_movable": 20,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 20,
+        "assembled_quantity": 20,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 4,
+        "available_quantity": 16,
+        "assembled_available": 16,
+        "semi_built_available": 0,
+        "assembled_movable": 16,
+        "semi_built_movable": 0
+      }
+    ],
+    "3": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 4,
+        "assembled_quantity": 4,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 4,
+        "assembled_available": 4,
+        "semi_built_available": 0,
+        "assembled_movable": 4,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 4,
+        "assembled_quantity": 4,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 1,
+        "available_quantity": 3,
+        "assembled_available": 3,
+        "semi_built_available": 0,
+        "assembled_movable": 3,
+        "semi_built_movable": 0
+      }
+    ],
+    "4": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 0,
+        "assembled_quantity": 0,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 6,
+        "assembled_quantity": 6,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 4,
+        "available_quantity": 2,
+        "assembled_available": 2,
+        "semi_built_available": 0,
+        "assembled_movable": 2,
+        "semi_built_movable": 0
+      }
+    ],
+    "5": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 0,
+        "assembled_quantity": 0,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 0,
+        "assembled_quantity": 0,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      }
+    ],
+    "6": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 0,
+        "assembled_quantity": 0,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 980,
+        "assembled_quantity": 980,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 980,
+        "assembled_available": 980,
+        "semi_built_available": 0,
+        "assembled_movable": 980,
+        "semi_built_movable": 0
+      }
+    ],
+    "7": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 0,
+        "assembled_quantity": 0,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 4,
+        "assembled_quantity": 4,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 4,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      }
+    ],
+    "8": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 0,
+        "assembled_quantity": 0,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 16,
+        "assembled_quantity": 16,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 8,
+        "available_quantity": 8,
+        "assembled_available": 8,
+        "semi_built_available": 0,
+        "assembled_movable": 8,
+        "semi_built_movable": 0
+      }
+    ],
+    "9": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 0,
+        "assembled_quantity": 0,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 1,
+        "assembled_quantity": 1,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 1,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      }
+    ],
+    "10": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 0,
+        "assembled_quantity": 0,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 1,
+        "assembled_quantity": 1,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 1,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      }
+    ],
+    "11": [
+      {
+        "location_id": 2,
+        "location_name": "Fictional Assembly Stores",
+        "location_type": "warehouse",
+        "is_default": 0,
+        "quantity": 0,
+        "assembled_quantity": 0,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 0,
+        "available_quantity": 0,
+        "assembled_available": 0,
+        "semi_built_available": 0,
+        "assembled_movable": 0,
+        "semi_built_movable": 0
+      },
+      {
+        "location_id": 1,
+        "location_name": "Main",
+        "location_type": "warehouse",
+        "is_default": 1,
+        "quantity": 9,
+        "assembled_quantity": 9,
+        "semi_built_quantity": 0,
+        "reserved_for_sales": 5,
+        "available_quantity": 4,
+        "assembled_available": 4,
+        "semi_built_available": 0,
+        "assembled_movable": 4,
+        "semi_built_movable": 0
+      }
+    ]
+  },
+  "scenarios": {
+    "so": {
+      "contexts": [
+        {
+          "order": {
+            "id": 1,
+            "number": "SO-00001",
+            "status": "approved",
+            "customer_name": "Fictional preparation customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:01",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 1,
+              "item_id": 4,
+              "name": "Fictional controller assembly",
+              "sku": "PREP-CTRL",
+              "unit": "pcs",
+              "quantity": 3,
+              "released_qty": 0,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 0
+            },
+            {
+              "id": 2,
+              "item_id": 4,
+              "name": "Fictional controller assembly · separate sale line",
+              "sku": "PREP-CTRL",
+              "unit": "pcs",
+              "quantity": 1,
+              "released_qty": 0,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 0
+            }
+          ],
+          "units": [],
+          "outstanding": 4,
+          "slips": [],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 1,
+              "item_id": 4,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 6,
+              "on_hand": 6,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 2,
+              "item_id": 4,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 3,
+              "on_hand": 6,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 1,
+            "mode": "pickup",
+            "recipient_name": "Fictional recipient",
+            "handoff_type": "external",
+            "receiver_user_id": null,
+            "token_required": true,
+            "receiver_active": null,
+            "id_reference": null,
+            "token_hint": "PICKUP-••••",
+            "valid_until": "2026-10-27 07:32:01",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": null
+        }
+      ],
+      "lookups": {
+        "PREP-CTRL": {
+          "state": "line_required",
+          "code": "PREP-CTRL",
+          "matching_lines": [
+            {
+              "order_item_id": 1,
+              "fulfillment_mode": "assembled",
+              "remaining": 3
+            },
+            {
+              "order_item_id": 2,
+              "fulfillment_mode": "assembled",
+              "remaining": 1
+            }
+          ]
+        }
+      }
+    },
+    "ckd": {
+      "contexts": [
+        {
+          "order": {
+            "id": 2,
+            "number": "SO-00002",
+            "status": "approved",
+            "customer_name": "Fictional preparation customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:01",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 3,
+              "item_id": 4,
+              "name": "Fictional controller component kit",
+              "sku": "PREP-CTRL",
+              "unit": "pcs",
+              "quantity": 2,
+              "released_qty": 0,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "ckd",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 0
+            },
+            {
+              "id": 4,
+              "item_id": 1,
+              "name": "Fictional M8 flange bolt",
+              "sku": "PREP-BOLT",
+              "unit": "pcs",
+              "quantity": 6,
+              "released_qty": 1,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "ckd_component",
+              "parent_order_item_id": 3,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 1
+            },
+            {
+              "id": 5,
+              "item_id": 2,
+              "name": "Fictional Control cable",
+              "sku": "PREP-CABLE",
+              "unit": "m",
+              "quantity": 4,
+              "released_qty": 0,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "ckd_component",
+              "parent_order_item_id": 3,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 0
+            },
+            {
+              "id": 6,
+              "item_id": 5,
+              "name": "Fictional relay component kit",
+              "sku": "PREP-RELAY",
+              "unit": "pcs",
+              "quantity": 1,
+              "released_qty": 0,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "ckd",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 0
+            },
+            {
+              "id": 7,
+              "item_id": 1,
+              "name": "Fictional M8 flange bolt",
+              "sku": "PREP-BOLT",
+              "unit": "pcs",
+              "quantity": 3,
+              "released_qty": 0,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "ckd_component",
+              "parent_order_item_id": 6,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 0
+            },
+            {
+              "id": 8,
+              "item_id": 3,
+              "name": "Fictional Inline fuse",
+              "sku": "PREP-FUSE",
+              "unit": "pcs",
+              "quantity": 1,
+              "released_qty": 0,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "ckd_component",
+              "parent_order_item_id": 6,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 0
+            }
+          ],
+          "units": [],
+          "outstanding": 14,
+          "slips": [],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 4,
+              "item_id": 1,
+              "fulfillment_mode": "ckd_component",
+              "free_to_allocate": 11,
+              "on_hand": 12,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 12,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 5,
+              "item_id": 2,
+              "fulfillment_mode": "ckd_component",
+              "free_to_allocate": 20,
+              "on_hand": 20,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 20,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 7,
+              "item_id": 1,
+              "fulfillment_mode": "ckd_component",
+              "free_to_allocate": 6,
+              "on_hand": 12,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 12,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 8,
+              "item_id": 3,
+              "fulfillment_mode": "ckd_component",
+              "free_to_allocate": 4,
+              "on_hand": 4,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 4,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 2,
+            "mode": "pickup",
+            "recipient_name": "Fictional recipient",
+            "handoff_type": "external",
+            "receiver_user_id": null,
+            "token_required": true,
+            "receiver_active": null,
+            "id_reference": null,
+            "token_hint": "PICKUP-••••",
+            "valid_until": "2026-10-27 07:32:01",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": null
+        }
+      ],
+      "lookups": {
+        "PREP-BOLT": {
+          "state": "line_required",
+          "code": "PREP-BOLT",
+          "matching_lines": [
+            {
+              "order_item_id": 4,
+              "fulfillment_mode": "ckd_component",
+              "remaining": 5
+            },
+            {
+              "order_item_id": 7,
+              "fulfillment_mode": "ckd_component",
+              "remaining": 3
+            }
+          ]
+        },
+        "PREP-CABLE": {
+          "state": "bulk_available",
+          "stock": {
+            "id": 2,
+            "name": "Fictional Control cable",
+            "code": "PREP-CABLE",
+            "build_mode": "ckd_component",
+            "available": 20
+          }
+        },
+        "PREP-FUSE": {
+          "state": "bulk_available",
+          "stock": {
+            "id": 3,
+            "name": "Fictional Inline fuse",
+            "code": "PREP-FUSE",
+            "build_mode": "ckd_component",
+            "available": 4
+          }
+        },
+        "PREP-CTRL": {
+          "state": "not_found",
+          "code": "PREP-CTRL"
+        },
+        "PREP-RELAY": {
+          "state": "not_found",
+          "code": "PREP-RELAY"
+        }
+      }
+    },
+    "jo": {
+      "jobs": [
+        {
+          "job": {
+            "id": 1,
+            "number": "MO-00001",
+            "order_id": null,
+            "parent_job_order_id": null,
+            "product_item_id": 4,
+            "product_name": "Fictional Controller assembly",
+            "qty_ordered": 2,
+            "qty_done": 0,
+            "qty_scrapped": 0,
+            "status": "draft",
+            "source_location_id": 2,
+            "output_location_id": 1,
+            "qc_stages": 1,
+            "qc_checklist_qc_snapshot": null,
+            "qc_checklist_qa_snapshot": null,
+            "team_id": null,
+            "planned_start": null,
+            "due_date": null,
+            "priority": 0,
+            "work_center": null,
+            "notes": null,
+            "created_by": 1,
+            "released_by": null,
+            "released_at": null,
+            "approved_by": 1,
+            "approved_at": "2026-10-26 07:32:02",
+            "approve_notes": null,
+            "accepted_by": null,
+            "accepted_at": null,
+            "accept_notes": null,
+            "closed_at": null,
+            "created_at": "2026-10-26 07:32:01",
+            "updated_at": "2026-10-26 07:32:02",
+            "warehouse_accepted_by": 2,
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "prepared_by": null,
+            "prepared_at": null,
+            "paused_by": null,
+            "paused_at": null,
+            "pause_reason": null,
+            "intake_origin": "production",
+            "legacy_intake_key": null,
+            "legacy_intake_hash": null,
+            "build_mode": "assembled",
+            "conversion_job_order_id": null,
+            "conversion_source_unit_id": null,
+            "conversion_source_batch_id": null,
+            "conversion_source_batch_number": null,
+            "conversion_cancel_reason": null,
+            "created_by_name": "System Administrator",
+            "released_by_name": null,
+            "accepted_by_name": null,
+            "approved_by_name": "System Administrator",
+            "warehouse_accepted_by_name": "Fictional preparation clerk",
+            "prepared_by_name": null,
+            "paused_by_name": null,
+            "parts_slip_id": null,
+            "parts_slip_number": null,
+            "open_issues": 0,
+            "order_number": null,
+            "parent_job_order_number": null,
+            "team_name": null,
+            "source_location_name": "Fictional Assembly Stores",
+            "output_location_name": "Main",
+            "components": [
+              {
+                "id": 1,
+                "job_order_id": 1,
+                "component_item_id": 1,
+                "component_name": "Fictional M8 flange bolt",
+                "qty_per_unit": 3,
+                "qty_planned": 6,
+                "qty_consumed": 0,
+                "qty_picked": 1,
+                "component_on_hand": 24
+              },
+              {
+                "id": 2,
+                "job_order_id": 1,
+                "component_item_id": 2,
+                "component_name": "Fictional Control cable",
+                "qty_per_unit": 2,
+                "qty_planned": 4,
+                "qty_consumed": 0,
+                "qty_picked": 0,
+                "component_on_hand": 40
+              }
+            ],
+            "units_summary": {
+              "pending": 0,
+              "in_stock": 0,
+              "failed": 0,
+              "scrapped": 0,
+              "rework": 0,
+              "sold": 0
+            },
+            "qc_checklist_qc": null,
+            "qc_checklist_qa": null,
+            "approval_revision": "03564e12d9b4ae997c5c3e5c75125a8475ee9155756bef4842d2feaf12cea5a8"
+          },
+          "availability": {
+            "job_order_id": 1,
+            "approval_revision": "03564e12d9b4ae997c5c3e5c75125a8475ee9155756bef4842d2feaf12cea5a8",
+            "status": "draft",
+            "source_location_id": 2,
+            "source_location_name": "Fictional Assembly Stores",
+            "lines": [
+              {
+                "component_item_id": 1,
+                "component_name": "Fictional M8 flange bolt",
+                "need": 6,
+                "have": 12,
+                "held_elsewhere": 0,
+                "available": 12,
+                "short": 0,
+                "picked": 1
+              },
+              {
+                "component_item_id": 2,
+                "component_name": "Fictional Control cable",
+                "need": 4,
+                "have": 20,
+                "held_elsewhere": 0,
+                "available": 20,
+                "short": 0,
+                "picked": 0
+              }
+            ],
+            "shortfalls": [],
+            "linked_purchase_orders": [],
+            "purchase_requirements": [],
+            "supply_planning_order": null,
+            "in_stock": true,
+            "approved": true,
+            "warehouse_accepted": true,
+            "prepared": false,
+            "releasable": false
+          }
+        },
+        {
+          "job": {
+            "id": 2,
+            "number": "MO-00002",
+            "order_id": null,
+            "parent_job_order_id": null,
+            "product_item_id": 5,
+            "product_name": "Fictional Relay panel",
+            "qty_ordered": 1,
+            "qty_done": 0,
+            "qty_scrapped": 0,
+            "status": "draft",
+            "source_location_id": 2,
+            "output_location_id": 1,
+            "qc_stages": 1,
+            "qc_checklist_qc_snapshot": null,
+            "qc_checklist_qa_snapshot": null,
+            "team_id": null,
+            "planned_start": null,
+            "due_date": null,
+            "priority": 0,
+            "work_center": null,
+            "notes": null,
+            "created_by": 1,
+            "released_by": null,
+            "released_at": null,
+            "approved_by": 1,
+            "approved_at": "2026-10-26 07:32:02",
+            "approve_notes": null,
+            "accepted_by": null,
+            "accepted_at": null,
+            "accept_notes": null,
+            "closed_at": null,
+            "created_at": "2026-10-26 07:32:02",
+            "updated_at": "2026-10-26 07:32:02",
+            "warehouse_accepted_by": 2,
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "prepared_by": null,
+            "prepared_at": null,
+            "paused_by": null,
+            "paused_at": null,
+            "pause_reason": null,
+            "intake_origin": "production",
+            "legacy_intake_key": null,
+            "legacy_intake_hash": null,
+            "build_mode": "assembled",
+            "conversion_job_order_id": null,
+            "conversion_source_unit_id": null,
+            "conversion_source_batch_id": null,
+            "conversion_source_batch_number": null,
+            "conversion_cancel_reason": null,
+            "created_by_name": "System Administrator",
+            "released_by_name": null,
+            "accepted_by_name": null,
+            "approved_by_name": "System Administrator",
+            "warehouse_accepted_by_name": "Fictional preparation clerk",
+            "prepared_by_name": null,
+            "paused_by_name": null,
+            "parts_slip_id": null,
+            "parts_slip_number": null,
+            "open_issues": 0,
+            "order_number": null,
+            "parent_job_order_number": null,
+            "team_name": null,
+            "source_location_name": "Fictional Assembly Stores",
+            "output_location_name": "Main",
+            "components": [
+              {
+                "id": 3,
+                "job_order_id": 2,
+                "component_item_id": 1,
+                "component_name": "Fictional M8 flange bolt",
+                "qty_per_unit": 3,
+                "qty_planned": 3,
+                "qty_consumed": 0,
+                "qty_picked": 0,
+                "component_on_hand": 24
+              },
+              {
+                "id": 4,
+                "job_order_id": 2,
+                "component_item_id": 3,
+                "component_name": "Fictional Inline fuse",
+                "qty_per_unit": 1,
+                "qty_planned": 1,
+                "qty_consumed": 0,
+                "qty_picked": 0,
+                "component_on_hand": 8
+              }
+            ],
+            "units_summary": {
+              "pending": 0,
+              "in_stock": 0,
+              "failed": 0,
+              "scrapped": 0,
+              "rework": 0,
+              "sold": 0
+            },
+            "qc_checklist_qc": null,
+            "qc_checklist_qa": null,
+            "approval_revision": "0d2f1940ff63ccd2adc7a928db4d1d0f9110bf7b0785d95776a44de28e6f633a"
+          },
+          "availability": {
+            "job_order_id": 2,
+            "approval_revision": "0d2f1940ff63ccd2adc7a928db4d1d0f9110bf7b0785d95776a44de28e6f633a",
+            "status": "draft",
+            "source_location_id": 2,
+            "source_location_name": "Fictional Assembly Stores",
+            "lines": [
+              {
+                "component_item_id": 1,
+                "component_name": "Fictional M8 flange bolt",
+                "need": 3,
+                "have": 12,
+                "held_elsewhere": 1,
+                "available": 11,
+                "short": 0,
+                "picked": 0
+              },
+              {
+                "component_item_id": 3,
+                "component_name": "Fictional Inline fuse",
+                "need": 1,
+                "have": 4,
+                "held_elsewhere": 0,
+                "available": 4,
+                "short": 0,
+                "picked": 0
+              }
+            ],
+            "shortfalls": [],
+            "linked_purchase_orders": [],
+            "purchase_requirements": [],
+            "supply_planning_order": null,
+            "in_stock": true,
+            "approved": true,
+            "warehouse_accepted": true,
+            "prepared": false,
+            "releasable": false
+          }
+        }
+      ]
+    },
+    "serial": {
+      "contexts": [
+        {
+          "order": {
+            "id": 3,
+            "number": "SO-00003",
+            "status": "approved",
+            "customer_name": "Fictional QR review customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 9,
+              "item_id": 7,
+              "name": "Fictional serialized controller",
+              "sku": "QR-SERIAL-CTRL",
+              "unit": "pcs",
+              "unit_price": 100,
+              "quantity": 3,
+              "released_qty": 0,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 1,
+              "serialized": 1,
+              "held_qty": 1
+            }
+          ],
+          "units": [
+            {
+              "id": 3,
+              "identifier": "QR-SERIAL-03",
+              "status": "reserved",
+              "product_item_id": 7,
+              "order_item_id": 9,
+              "product_name": "Fictional serialized controller",
+              "location_name": "Main",
+              "pending_direct": 0,
+              "receipt_number": "PI-00001"
+            }
+          ],
+          "outstanding": 3,
+          "slips": [],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 9,
+              "item_id": 7,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 2,
+              "on_hand": 4,
+              "committed_elsewhere": 1,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 3,
+            "mode": "pickup",
+            "recipient_name": "Fictional recipient",
+            "handoff_type": "external",
+            "receiver_user_id": null,
+            "token_required": true,
+            "receiver_active": null,
+            "id_reference": null,
+            "token_hint": "PICKUP-••••",
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": null
+        }
+      ],
+      "lookups": {
+        "VDS:UNIT:1": {
+          "state": "available",
+          "unit": {
+            "id": 1,
+            "identifier": "QR-SERIAL-01",
+            "status": "in_stock",
+            "order_id": null,
+            "product_item_id": 7,
+            "location_id": 1,
+            "product_name": "Fictional serialized controller",
+            "build_mode": "assembled",
+            "location_name": "Main",
+            "order_number": null,
+            "receipt_number": "PI-00001"
+          }
+        },
+        "VDS:UNIT:2": {
+          "state": "other_order",
+          "unit": {
+            "id": 2,
+            "identifier": "QR-SERIAL-02",
+            "status": "reserved",
+            "order_id": 4,
+            "product_item_id": 7,
+            "location_id": 1,
+            "product_name": "Fictional serialized controller",
+            "build_mode": "assembled",
+            "location_name": "Main",
+            "order_number": "SO-00004",
+            "receipt_number": "PI-00001"
+          }
+        },
+        "VDS:UNIT:3": {
+          "state": "allocated",
+          "unit": {
+            "id": 3,
+            "identifier": "QR-SERIAL-03",
+            "status": "reserved",
+            "order_id": 3,
+            "product_item_id": 7,
+            "location_id": 1,
+            "product_name": "Fictional serialized controller",
+            "build_mode": "assembled",
+            "location_name": "Main",
+            "order_number": "SO-00003",
+            "receipt_number": "PI-00001"
+          }
+        },
+        "VDS:UNIT:4": {
+          "state": "available",
+          "unit": {
+            "id": 4,
+            "identifier": "QR-SERIAL-04",
+            "status": "in_stock",
+            "order_id": null,
+            "product_item_id": 7,
+            "location_id": 1,
+            "product_name": "Fictional serialized controller",
+            "build_mode": "assembled",
+            "location_name": "Main",
+            "order_number": null,
+            "receipt_number": "PI-00001"
+          }
+        },
+        "QR-SERIAL-CTRL": {
+          "state": "not_found",
+          "code": "QR-SERIAL-CTRL"
+        }
+      },
+      "meta": {
+        "itemId": 7,
+        "freeCode": "VDS:UNIT:1",
+        "heldCode": "VDS:UNIT:2",
+        "alreadyCode": "VDS:UNIT:3",
+        "raceCode": "VDS:UNIT:4",
+        "otherOrderId": 4,
+        "otherOrderNumber": "SO-00004"
+      }
+    },
+    "batch": {
+      "contexts": [
+        {
+          "order": {
+            "id": 5,
+            "number": "SO-00005",
+            "status": "approved",
+            "customer_name": "Fictional QR review customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 11,
+              "item_id": 8,
+              "name": "Fictional batch controller",
+              "sku": "QR-BATCH-CTRL",
+              "unit": "pcs",
+              "unit_price": 100,
+              "quantity": 6,
+              "released_qty": 0,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 0
+            }
+          ],
+          "units": [],
+          "outstanding": 6,
+          "slips": [],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 11,
+              "item_id": 8,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 14,
+              "on_hand": 16,
+              "committed_elsewhere": 2,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 5,
+            "mode": "pickup",
+            "recipient_name": "Fictional recipient",
+            "handoff_type": "external",
+            "receiver_user_id": null,
+            "token_required": true,
+            "receiver_active": null,
+            "id_reference": null,
+            "token_hint": "PICKUP-••••",
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": null
+        }
+      ],
+      "lookups": {
+        "VDS:BATCH:1": {
+          "state": "batch_available",
+          "batch": {
+            "id": 1,
+            "number": "BATCH-00001",
+            "product_item_id": 8,
+            "product_name": "Fictional batch controller",
+            "build_mode": "assembled",
+            "balances": [
+              {
+                "location_id": 1,
+                "location_name": "Main",
+                "on_hand": 8,
+                "received": 8,
+                "reserved": 2,
+                "available": 6
+              }
+            ],
+            "available": 6
+          },
+          "matching_lines": [
+            {
+              "order_item_id": 11,
+              "remaining": 6
+            }
+          ]
+        },
+        "QR-BATCH-CTRL": {
+          "state": "batch_label_required",
+          "code": "QR-BATCH-CTRL"
+        }
+      },
+      "meta": {
+        "itemId": 8,
+        "batchId": 1,
+        "code": "VDS:BATCH:1",
+        "otherOrderId": 6,
+        "otherOrderNumber": "SO-00006"
+      }
+    },
+    "checklist": {
+      "contexts": [
+        {
+          "order": {
+            "id": 7,
+            "number": "SO-00007",
+            "status": "released",
+            "customer_name": "Fictional checklist customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 13,
+              "item_id": 9,
+              "name": "Fictional release-package controller",
+              "sku": "PREP-PACKAGE",
+              "unit": "pcs",
+              "quantity": 1,
+              "released_qty": 1,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 1
+            }
+          ],
+          "units": [],
+          "outstanding": 1,
+          "slips": [],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 13,
+              "item_id": 9,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 0,
+              "on_hand": 1,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 7,
+            "mode": "pickup",
+            "recipient_name": "Fictional recipient",
+            "handoff_type": "external",
+            "receiver_user_id": null,
+            "token_required": true,
+            "receiver_active": null,
+            "id_reference": null,
+            "token_hint": "PICKUP-••••",
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": false,
+            "revoke_reason": null
+          },
+          "package": [
+            {
+              "item_id": 9,
+              "item_name": "Fictional release-package controller",
+              "label": "Power adapter",
+              "required": true
+            },
+            {
+              "item_id": 9,
+              "item_name": "Fictional release-package controller",
+              "label": "Mounting hardware",
+              "required": true
+            },
+            {
+              "item_id": 9,
+              "item_name": "Fictional release-package controller",
+              "label": "Printed installation guide",
+              "required": false
+            }
+          ],
+          "reports": [],
+          "delivery": null,
+          "slip": null
+        }
+      ],
+      "lookups": {},
+      "meta": {
+        "entry": "package",
+        "description": "Two required package items and one optional item; stock already reserved, no warehouse-out."
+      }
+    },
+    "internal": {
+      "contexts": [
+        {
+          "order": {
+            "id": 8,
+            "number": "SO-00008",
+            "status": "released",
+            "customer_name": "Fictional internal staff handoff",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 14,
+              "item_id": 10,
+              "name": "Fictional internal-handoff controller",
+              "sku": "PREP-INTERNAL",
+              "unit": "pcs",
+              "quantity": 1,
+              "released_qty": 1,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 1
+            }
+          ],
+          "units": [],
+          "outstanding": 1,
+          "slips": [],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 14,
+              "item_id": 10,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 0,
+              "on_hand": 1,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 8,
+            "mode": "pickup",
+            "recipient_name": "Fictional assigned staff receiver",
+            "handoff_type": "internal",
+            "receiver_user_id": 3,
+            "token_required": false,
+            "receiver_active": true,
+            "id_reference": null,
+            "token_hint": null,
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": false,
+            "revoke_reason": null
+          },
+          "package": [
+            {
+              "item_id": 10,
+              "item_name": "Fictional internal-handoff controller",
+              "label": "Power adapter",
+              "required": true
+            },
+            {
+              "item_id": 10,
+              "item_name": "Fictional internal-handoff controller",
+              "label": "Mounting hardware",
+              "required": true
+            },
+            {
+              "item_id": 10,
+              "item_name": "Fictional internal-handoff controller",
+              "label": "Printed installation guide",
+              "required": false
+            }
+          ],
+          "reports": [],
+          "delivery": null,
+          "slip": null
+        }
+      ],
+      "lookups": {},
+      "meta": {
+        "entry": "package",
+        "description": "Sales-assigned active staff receiver; no release code; required package checks and signed acknowledgment."
+      }
+    },
+    "partial": {
+      "contexts": [
+        {
+          "order": {
+            "id": 9,
+            "number": "SO-00009",
+            "status": "approved",
+            "customer_name": "Fictional split-trip customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 15,
+              "item_id": 11,
+              "name": "Fictional controller · first sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 4,
+              "released_qty": 4,
+              "dispatched_qty": 1,
+              "dispatched_bulk_qty": 1,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 3
+            },
+            {
+              "id": 16,
+              "item_id": 11,
+              "name": "Fictional controller · second sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 2,
+              "released_qty": 2,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 2
+            }
+          ],
+          "units": [],
+          "outstanding": 5,
+          "slips": [
+            {
+              "id": 1,
+              "number": "RS-00001",
+              "released_at": "2026-10-26 07:32:02"
+            }
+          ],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 15,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 6,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 16,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 4,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 10,
+            "mode": "pickup",
+            "recipient_name": "Fictional assigned staff receiver",
+            "handoff_type": "internal",
+            "receiver_user_id": 3,
+            "token_required": false,
+            "receiver_active": true,
+            "id_reference": null,
+            "token_hint": null,
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02",
+            "collected_by": "Fictional assigned staff receiver",
+            "released_by_name": "Fictional preparation clerk",
+            "backorder_order_id": null,
+            "backorder_number": null
+          }
+        }
+      ],
+      "lookups": {},
+      "saleOrder": {
+        "id": 9,
+        "type": "sale",
+        "number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_date": null,
+        "status": "approved",
+        "notes": null,
+        "currency": "PHP",
+        "subtotal": 620,
+        "tax_percent": 0,
+        "tax_amount": 0,
+        "total": 620,
+        "created_by": 1,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "supplier_id": null,
+        "expected_date": null,
+        "customer_id": null,
+        "tax_code_id": null,
+        "location_id": 1,
+        "fulfilled_at": null,
+        "released_at": "2026-10-26 07:32:02",
+        "released_by": 2,
+        "warehouse_accepted_by": 2,
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "created_by_name": "System Administrator",
+        "supplier_name": null,
+        "job_order_id": null,
+        "job_order_number": null,
+        "job_order_status": null,
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "release_slip_id": 1,
+        "release_slip_number": "RS-00001",
+        "items": [
+          {
+            "id": 15,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 4,
+            "unit": null,
+            "unit_price": 100,
+            "line_total": 400,
+            "sort": 0,
+            "tax_code_id": null,
+            "released_qty": 4,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 1,
+            "dispatched_bulk_qty": 1,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          },
+          {
+            "id": 16,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 2,
+            "unit": null,
+            "unit_price": 110,
+            "line_total": 220,
+            "sort": 1,
+            "tax_code_id": null,
+            "released_qty": 2,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 0,
+            "dispatched_bulk_qty": 0,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          }
+        ],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "fulfillment": {
+          "ordered": 6,
+          "dispatched": 1,
+          "cancelled": 0,
+          "delivered": 1,
+          "held": 5,
+          "remaining": 5,
+          "state": "partially_fulfilled"
+        },
+        "trips": [
+          {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02"
+          }
+        ],
+        "delivery_events": []
+      },
+      "saleAvailability": {
+        "ok": true,
+        "short_lines": 0,
+        "lines": [
+          {
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "ordered": 4,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 4,
+            "available": 10,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          },
+          {
+            "order_item_id": 16,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "ordered": 2,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 2,
+            "available": 6,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          }
+        ],
+        "location_id": 1,
+        "location_name": "Main",
+        "uses_default_location": false,
+        "non_stock_lines": 0,
+        "purchase_requirements": [],
+        "linked_purchase_orders": [],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "order_status": "approved"
+      },
+      "receipt": {
+        "id": 1,
+        "number": "RS-00001",
+        "order_id": 9,
+        "released_by": 2,
+        "released_at": "2026-10-26 07:32:02",
+        "collected_by": "Fictional assigned staff receiver",
+        "vehicle_plate": null,
+        "notes": null,
+        "order_number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_status": "approved",
+        "released_by_name": "Fictional preparation clerk",
+        "handoff_type": "internal",
+        "receiver_user_id": 3,
+        "signature_attachment_id": 5,
+        "acknowledged": 1,
+        "approved_receiver_name": "Fictional assigned staff receiver",
+        "photo_count": 1,
+        "override_reason": null,
+        "override_by_name": null,
+        "items": [
+          {
+            "id": 1,
+            "slip_id": 1,
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "unit": null,
+            "quantity": 1,
+            "unit_identifiers": null
+          }
+        ]
+      },
+      "meta": {
+        "entry": "trip",
+        "description": "Real partial warehouse-out: 1 shipped, 5 still to ship on two exact sale lines; new internal authority for the remainder."
+      }
+    },
+    "receipt": {
+      "contexts": [
+        {
+          "order": {
+            "id": 9,
+            "number": "SO-00009",
+            "status": "approved",
+            "customer_name": "Fictional split-trip customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 15,
+              "item_id": 11,
+              "name": "Fictional controller · first sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 4,
+              "released_qty": 4,
+              "dispatched_qty": 1,
+              "dispatched_bulk_qty": 1,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 3
+            },
+            {
+              "id": 16,
+              "item_id": 11,
+              "name": "Fictional controller · second sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 2,
+              "released_qty": 2,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 2
+            }
+          ],
+          "units": [],
+          "outstanding": 5,
+          "slips": [
+            {
+              "id": 1,
+              "number": "RS-00001",
+              "released_at": "2026-10-26 07:32:02"
+            }
+          ],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 15,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 6,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 16,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 4,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 10,
+            "mode": "pickup",
+            "recipient_name": "Fictional assigned staff receiver",
+            "handoff_type": "internal",
+            "receiver_user_id": 3,
+            "token_required": false,
+            "receiver_active": true,
+            "id_reference": null,
+            "token_hint": null,
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02",
+            "collected_by": "Fictional assigned staff receiver",
+            "released_by_name": "Fictional preparation clerk",
+            "backorder_order_id": null,
+            "backorder_number": null
+          }
+        }
+      ],
+      "lookups": {},
+      "saleOrder": {
+        "id": 9,
+        "type": "sale",
+        "number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_date": null,
+        "status": "approved",
+        "notes": null,
+        "currency": "PHP",
+        "subtotal": 620,
+        "tax_percent": 0,
+        "tax_amount": 0,
+        "total": 620,
+        "created_by": 1,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "supplier_id": null,
+        "expected_date": null,
+        "customer_id": null,
+        "tax_code_id": null,
+        "location_id": 1,
+        "fulfilled_at": null,
+        "released_at": "2026-10-26 07:32:02",
+        "released_by": 2,
+        "warehouse_accepted_by": 2,
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "created_by_name": "System Administrator",
+        "supplier_name": null,
+        "job_order_id": null,
+        "job_order_number": null,
+        "job_order_status": null,
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "release_slip_id": 1,
+        "release_slip_number": "RS-00001",
+        "items": [
+          {
+            "id": 15,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 4,
+            "unit": null,
+            "unit_price": 100,
+            "line_total": 400,
+            "sort": 0,
+            "tax_code_id": null,
+            "released_qty": 4,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 1,
+            "dispatched_bulk_qty": 1,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          },
+          {
+            "id": 16,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 2,
+            "unit": null,
+            "unit_price": 110,
+            "line_total": 220,
+            "sort": 1,
+            "tax_code_id": null,
+            "released_qty": 2,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 0,
+            "dispatched_bulk_qty": 0,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          }
+        ],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "fulfillment": {
+          "ordered": 6,
+          "dispatched": 1,
+          "cancelled": 0,
+          "delivered": 1,
+          "held": 5,
+          "remaining": 5,
+          "state": "partially_fulfilled"
+        },
+        "trips": [
+          {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02"
+          }
+        ],
+        "delivery_events": []
+      },
+      "saleAvailability": {
+        "ok": true,
+        "short_lines": 0,
+        "lines": [
+          {
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "ordered": 4,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 4,
+            "available": 10,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          },
+          {
+            "order_item_id": 16,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "ordered": 2,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 2,
+            "available": 6,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          }
+        ],
+        "location_id": 1,
+        "location_name": "Main",
+        "uses_default_location": false,
+        "non_stock_lines": 0,
+        "purchase_requirements": [],
+        "linked_purchase_orders": [],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "order_status": "approved"
+      },
+      "receipt": {
+        "id": 1,
+        "number": "RS-00001",
+        "order_id": 9,
+        "released_by": 2,
+        "released_at": "2026-10-26 07:32:02",
+        "collected_by": "Fictional assigned staff receiver",
+        "vehicle_plate": null,
+        "notes": null,
+        "order_number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_status": "approved",
+        "released_by_name": "Fictional preparation clerk",
+        "handoff_type": "internal",
+        "receiver_user_id": 3,
+        "signature_attachment_id": 5,
+        "acknowledged": 1,
+        "approved_receiver_name": "Fictional assigned staff receiver",
+        "photo_count": 1,
+        "override_reason": null,
+        "override_by_name": null,
+        "items": [
+          {
+            "id": 1,
+            "slip_id": 1,
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "unit": null,
+            "quantity": 1,
+            "unit_identifiers": null
+          }
+        ]
+      },
+      "meta": {
+        "entry": "trip",
+        "description": "Real partial warehouse-out: 1 shipped, 5 still to ship on two exact sale lines; new internal authority for the remainder."
+      }
+    },
+    "handoff": {
+      "contexts": [
+        {
+          "order": {
+            "id": 9,
+            "number": "SO-00009",
+            "status": "approved",
+            "customer_name": "Fictional split-trip customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 15,
+              "item_id": 11,
+              "name": "Fictional controller · first sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 4,
+              "released_qty": 4,
+              "dispatched_qty": 1,
+              "dispatched_bulk_qty": 1,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 3
+            },
+            {
+              "id": 16,
+              "item_id": 11,
+              "name": "Fictional controller · second sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 2,
+              "released_qty": 2,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 2
+            }
+          ],
+          "units": [],
+          "outstanding": 5,
+          "slips": [
+            {
+              "id": 1,
+              "number": "RS-00001",
+              "released_at": "2026-10-26 07:32:02"
+            }
+          ],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 15,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 6,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 16,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 4,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 10,
+            "mode": "pickup",
+            "recipient_name": "Fictional assigned staff receiver",
+            "handoff_type": "internal",
+            "receiver_user_id": 3,
+            "token_required": false,
+            "receiver_active": true,
+            "id_reference": null,
+            "token_hint": null,
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02",
+            "collected_by": "Fictional assigned staff receiver",
+            "released_by_name": "Fictional preparation clerk",
+            "backorder_order_id": null,
+            "backorder_number": null
+          }
+        }
+      ],
+      "lookups": {},
+      "saleOrder": {
+        "id": 9,
+        "type": "sale",
+        "number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_date": null,
+        "status": "approved",
+        "notes": null,
+        "currency": "PHP",
+        "subtotal": 620,
+        "tax_percent": 0,
+        "tax_amount": 0,
+        "total": 620,
+        "created_by": 1,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "supplier_id": null,
+        "expected_date": null,
+        "customer_id": null,
+        "tax_code_id": null,
+        "location_id": 1,
+        "fulfilled_at": null,
+        "released_at": "2026-10-26 07:32:02",
+        "released_by": 2,
+        "warehouse_accepted_by": 2,
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "created_by_name": "System Administrator",
+        "supplier_name": null,
+        "job_order_id": null,
+        "job_order_number": null,
+        "job_order_status": null,
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "release_slip_id": 1,
+        "release_slip_number": "RS-00001",
+        "items": [
+          {
+            "id": 15,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 4,
+            "unit": null,
+            "unit_price": 100,
+            "line_total": 400,
+            "sort": 0,
+            "tax_code_id": null,
+            "released_qty": 4,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 1,
+            "dispatched_bulk_qty": 1,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          },
+          {
+            "id": 16,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 2,
+            "unit": null,
+            "unit_price": 110,
+            "line_total": 220,
+            "sort": 1,
+            "tax_code_id": null,
+            "released_qty": 2,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 0,
+            "dispatched_bulk_qty": 0,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          }
+        ],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "fulfillment": {
+          "ordered": 6,
+          "dispatched": 1,
+          "cancelled": 0,
+          "delivered": 1,
+          "held": 5,
+          "remaining": 5,
+          "state": "partially_fulfilled"
+        },
+        "trips": [
+          {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02"
+          }
+        ],
+        "delivery_events": []
+      },
+      "saleAvailability": {
+        "ok": true,
+        "short_lines": 0,
+        "lines": [
+          {
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "ordered": 4,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 4,
+            "available": 10,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          },
+          {
+            "order_item_id": 16,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "ordered": 2,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 2,
+            "available": 6,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          }
+        ],
+        "location_id": 1,
+        "location_name": "Main",
+        "uses_default_location": false,
+        "non_stock_lines": 0,
+        "purchase_requirements": [],
+        "linked_purchase_orders": [],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "order_status": "approved"
+      },
+      "receipt": {
+        "id": 1,
+        "number": "RS-00001",
+        "order_id": 9,
+        "released_by": 2,
+        "released_at": "2026-10-26 07:32:02",
+        "collected_by": "Fictional assigned staff receiver",
+        "vehicle_plate": null,
+        "notes": null,
+        "order_number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_status": "approved",
+        "released_by_name": "Fictional preparation clerk",
+        "handoff_type": "internal",
+        "receiver_user_id": 3,
+        "signature_attachment_id": 5,
+        "acknowledged": 1,
+        "approved_receiver_name": "Fictional assigned staff receiver",
+        "photo_count": 1,
+        "override_reason": null,
+        "override_by_name": null,
+        "items": [
+          {
+            "id": 1,
+            "slip_id": 1,
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "unit": null,
+            "quantity": 1,
+            "unit_identifiers": null
+          }
+        ]
+      },
+      "meta": {
+        "entry": "trip",
+        "description": "Real partial warehouse-out: 1 shipped, 5 still to ship on two exact sale lines; new internal authority for the remainder."
+      }
+    },
+    "exceptions": {
+      "contexts": [
+        {
+          "order": {
+            "id": 9,
+            "number": "SO-00009",
+            "status": "approved",
+            "customer_name": "Fictional split-trip customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 15,
+              "item_id": 11,
+              "name": "Fictional controller · first sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 4,
+              "released_qty": 4,
+              "dispatched_qty": 1,
+              "dispatched_bulk_qty": 1,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 3
+            },
+            {
+              "id": 16,
+              "item_id": 11,
+              "name": "Fictional controller · second sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 2,
+              "released_qty": 2,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 2
+            }
+          ],
+          "units": [],
+          "outstanding": 5,
+          "slips": [
+            {
+              "id": 1,
+              "number": "RS-00001",
+              "released_at": "2026-10-26 07:32:02"
+            }
+          ],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 15,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 6,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 16,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 4,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 10,
+            "mode": "pickup",
+            "recipient_name": "Fictional assigned staff receiver",
+            "handoff_type": "internal",
+            "receiver_user_id": 3,
+            "token_required": false,
+            "receiver_active": true,
+            "id_reference": null,
+            "token_hint": null,
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02",
+            "collected_by": "Fictional assigned staff receiver",
+            "released_by_name": "Fictional preparation clerk",
+            "backorder_order_id": null,
+            "backorder_number": null
+          }
+        }
+      ],
+      "lookups": {},
+      "saleOrder": {
+        "id": 9,
+        "type": "sale",
+        "number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_date": null,
+        "status": "approved",
+        "notes": null,
+        "currency": "PHP",
+        "subtotal": 620,
+        "tax_percent": 0,
+        "tax_amount": 0,
+        "total": 620,
+        "created_by": 1,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "supplier_id": null,
+        "expected_date": null,
+        "customer_id": null,
+        "tax_code_id": null,
+        "location_id": 1,
+        "fulfilled_at": null,
+        "released_at": "2026-10-26 07:32:02",
+        "released_by": 2,
+        "warehouse_accepted_by": 2,
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "created_by_name": "System Administrator",
+        "supplier_name": null,
+        "job_order_id": null,
+        "job_order_number": null,
+        "job_order_status": null,
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "release_slip_id": 1,
+        "release_slip_number": "RS-00001",
+        "items": [
+          {
+            "id": 15,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 4,
+            "unit": null,
+            "unit_price": 100,
+            "line_total": 400,
+            "sort": 0,
+            "tax_code_id": null,
+            "released_qty": 4,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 1,
+            "dispatched_bulk_qty": 1,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          },
+          {
+            "id": 16,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 2,
+            "unit": null,
+            "unit_price": 110,
+            "line_total": 220,
+            "sort": 1,
+            "tax_code_id": null,
+            "released_qty": 2,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 0,
+            "dispatched_bulk_qty": 0,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          }
+        ],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "fulfillment": {
+          "ordered": 6,
+          "dispatched": 1,
+          "cancelled": 0,
+          "delivered": 1,
+          "held": 5,
+          "remaining": 5,
+          "state": "partially_fulfilled"
+        },
+        "trips": [
+          {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02"
+          }
+        ],
+        "delivery_events": []
+      },
+      "saleAvailability": {
+        "ok": true,
+        "short_lines": 0,
+        "lines": [
+          {
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "ordered": 4,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 4,
+            "available": 10,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          },
+          {
+            "order_item_id": 16,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "ordered": 2,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 2,
+            "available": 6,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          }
+        ],
+        "location_id": 1,
+        "location_name": "Main",
+        "uses_default_location": false,
+        "non_stock_lines": 0,
+        "purchase_requirements": [],
+        "linked_purchase_orders": [],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "order_status": "approved"
+      },
+      "receipt": {
+        "id": 1,
+        "number": "RS-00001",
+        "order_id": 9,
+        "released_by": 2,
+        "released_at": "2026-10-26 07:32:02",
+        "collected_by": "Fictional assigned staff receiver",
+        "vehicle_plate": null,
+        "notes": null,
+        "order_number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_status": "approved",
+        "released_by_name": "Fictional preparation clerk",
+        "handoff_type": "internal",
+        "receiver_user_id": 3,
+        "signature_attachment_id": 5,
+        "acknowledged": 1,
+        "approved_receiver_name": "Fictional assigned staff receiver",
+        "photo_count": 1,
+        "override_reason": null,
+        "override_by_name": null,
+        "items": [
+          {
+            "id": 1,
+            "slip_id": 1,
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "unit": null,
+            "quantity": 1,
+            "unit_identifiers": null
+          }
+        ]
+      },
+      "meta": {
+        "entry": "trip",
+        "description": "Real partial warehouse-out: 1 shipped, 5 still to ship on two exact sale lines; new internal authority for the remainder."
+      }
+    },
+    "salesauth": {
+      "contexts": [
+        {
+          "order": {
+            "id": 9,
+            "number": "SO-00009",
+            "status": "approved",
+            "customer_name": "Fictional split-trip customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 15,
+              "item_id": 11,
+              "name": "Fictional controller · first sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 4,
+              "released_qty": 4,
+              "dispatched_qty": 1,
+              "dispatched_bulk_qty": 1,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 3
+            },
+            {
+              "id": 16,
+              "item_id": 11,
+              "name": "Fictional controller · second sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 2,
+              "released_qty": 2,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 2
+            }
+          ],
+          "units": [],
+          "outstanding": 5,
+          "slips": [
+            {
+              "id": 1,
+              "number": "RS-00001",
+              "released_at": "2026-10-26 07:32:02"
+            }
+          ],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 15,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 6,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 16,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 4,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 10,
+            "mode": "pickup",
+            "recipient_name": "Fictional assigned staff receiver",
+            "handoff_type": "internal",
+            "receiver_user_id": 3,
+            "token_required": false,
+            "receiver_active": true,
+            "id_reference": null,
+            "token_hint": null,
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02",
+            "collected_by": "Fictional assigned staff receiver",
+            "released_by_name": "Fictional preparation clerk",
+            "backorder_order_id": null,
+            "backorder_number": null
+          }
+        }
+      ],
+      "lookups": {},
+      "saleOrder": {
+        "id": 9,
+        "type": "sale",
+        "number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_date": null,
+        "status": "approved",
+        "notes": null,
+        "currency": "PHP",
+        "subtotal": 620,
+        "tax_percent": 0,
+        "tax_amount": 0,
+        "total": 620,
+        "created_by": 1,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "supplier_id": null,
+        "expected_date": null,
+        "customer_id": null,
+        "tax_code_id": null,
+        "location_id": 1,
+        "fulfilled_at": null,
+        "released_at": "2026-10-26 07:32:02",
+        "released_by": 2,
+        "warehouse_accepted_by": 2,
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "created_by_name": "System Administrator",
+        "supplier_name": null,
+        "job_order_id": null,
+        "job_order_number": null,
+        "job_order_status": null,
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "release_slip_id": 1,
+        "release_slip_number": "RS-00001",
+        "items": [
+          {
+            "id": 15,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 4,
+            "unit": null,
+            "unit_price": 100,
+            "line_total": 400,
+            "sort": 0,
+            "tax_code_id": null,
+            "released_qty": 4,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 1,
+            "dispatched_bulk_qty": 1,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          },
+          {
+            "id": 16,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 2,
+            "unit": null,
+            "unit_price": 110,
+            "line_total": 220,
+            "sort": 1,
+            "tax_code_id": null,
+            "released_qty": 2,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 0,
+            "dispatched_bulk_qty": 0,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          }
+        ],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "fulfillment": {
+          "ordered": 6,
+          "dispatched": 1,
+          "cancelled": 0,
+          "delivered": 1,
+          "held": 5,
+          "remaining": 5,
+          "state": "partially_fulfilled"
+        },
+        "trips": [
+          {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02"
+          }
+        ],
+        "delivery_events": []
+      },
+      "saleAvailability": {
+        "ok": true,
+        "short_lines": 0,
+        "lines": [
+          {
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "ordered": 4,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 4,
+            "available": 10,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          },
+          {
+            "order_item_id": 16,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "ordered": 2,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 2,
+            "available": 6,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          }
+        ],
+        "location_id": 1,
+        "location_name": "Main",
+        "uses_default_location": false,
+        "non_stock_lines": 0,
+        "purchase_requirements": [],
+        "linked_purchase_orders": [],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "order_status": "approved"
+      },
+      "receipt": {
+        "id": 1,
+        "number": "RS-00001",
+        "order_id": 9,
+        "released_by": 2,
+        "released_at": "2026-10-26 07:32:02",
+        "collected_by": "Fictional assigned staff receiver",
+        "vehicle_plate": null,
+        "notes": null,
+        "order_number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_status": "approved",
+        "released_by_name": "Fictional preparation clerk",
+        "handoff_type": "internal",
+        "receiver_user_id": 3,
+        "signature_attachment_id": 5,
+        "acknowledged": 1,
+        "approved_receiver_name": "Fictional assigned staff receiver",
+        "photo_count": 1,
+        "override_reason": null,
+        "override_by_name": null,
+        "items": [
+          {
+            "id": 1,
+            "slip_id": 1,
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "unit": null,
+            "quantity": 1,
+            "unit_identifiers": null
+          }
+        ]
+      },
+      "meta": {
+        "entry": "trip",
+        "description": "Real partial warehouse-out: 1 shipped, 5 still to ship on two exact sale lines; new internal authority for the remainder."
+      }
+    },
+    "queue": {
+      "contexts": [
+        {
+          "order": {
+            "id": 9,
+            "number": "SO-00009",
+            "status": "approved",
+            "customer_name": "Fictional split-trip customer",
+            "currency": "PHP",
+            "warehouse_accepted_at": "2026-10-26 07:32:02",
+            "location_id": 1,
+            "location_name": "Main"
+          },
+          "lines": [
+            {
+              "id": 15,
+              "item_id": 11,
+              "name": "Fictional controller · first sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 4,
+              "released_qty": 4,
+              "dispatched_qty": 1,
+              "dispatched_bulk_qty": 1,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 3
+            },
+            {
+              "id": 16,
+              "item_id": 11,
+              "name": "Fictional controller · second sale line",
+              "sku": "FLOW-TRIP",
+              "unit": "pcs",
+              "quantity": 2,
+              "released_qty": 2,
+              "dispatched_qty": 0,
+              "dispatched_bulk_qty": 0,
+              "cancelled_qty": 0,
+              "fulfillment_mode": "assembled",
+              "parent_order_item_id": null,
+              "units": 0,
+              "serialized": 0,
+              "held_qty": 2
+            }
+          ],
+          "units": [],
+          "outstanding": 5,
+          "slips": [
+            {
+              "id": 1,
+              "number": "RS-00001",
+              "released_at": "2026-10-26 07:32:02"
+            }
+          ],
+          "deliveries": [],
+          "batch_allocations": [],
+          "availability": [
+            {
+              "order_item_id": 15,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 6,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            },
+            {
+              "order_item_id": 16,
+              "item_id": 11,
+              "fulfillment_mode": "assembled",
+              "free_to_allocate": 4,
+              "on_hand": 9,
+              "committed_elsewhere": 0,
+              "kit_held": 0,
+              "repair_held": 0,
+              "elsewhere_on_hand": 0,
+              "linked_job_orders": []
+            }
+          ],
+          "authorization": {
+            "override": null,
+            "state": "valid",
+            "required": true,
+            "id": 10,
+            "mode": "pickup",
+            "recipient_name": "Fictional assigned staff receiver",
+            "handoff_type": "internal",
+            "receiver_user_id": 3,
+            "token_required": false,
+            "receiver_active": true,
+            "id_reference": null,
+            "token_hint": null,
+            "valid_until": "2026-10-27 07:32:02",
+            "handoff_area": null,
+            "partial_allowed": true,
+            "revoke_reason": null
+          },
+          "package": [],
+          "reports": [],
+          "delivery": null,
+          "slip": {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02",
+            "collected_by": "Fictional assigned staff receiver",
+            "released_by_name": "Fictional preparation clerk",
+            "backorder_order_id": null,
+            "backorder_number": null
+          }
+        }
+      ],
+      "lookups": {},
+      "saleOrder": {
+        "id": 9,
+        "type": "sale",
+        "number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_date": null,
+        "status": "approved",
+        "notes": null,
+        "currency": "PHP",
+        "subtotal": 620,
+        "tax_percent": 0,
+        "tax_amount": 0,
+        "total": 620,
+        "created_by": 1,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "supplier_id": null,
+        "expected_date": null,
+        "customer_id": null,
+        "tax_code_id": null,
+        "location_id": 1,
+        "fulfilled_at": null,
+        "released_at": "2026-10-26 07:32:02",
+        "released_by": 2,
+        "warehouse_accepted_by": 2,
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "created_by_name": "System Administrator",
+        "supplier_name": null,
+        "job_order_id": null,
+        "job_order_number": null,
+        "job_order_status": null,
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "release_slip_id": 1,
+        "release_slip_number": "RS-00001",
+        "items": [
+          {
+            "id": 15,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 4,
+            "unit": null,
+            "unit_price": 100,
+            "line_total": 400,
+            "sort": 0,
+            "tax_code_id": null,
+            "released_qty": 4,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 1,
+            "dispatched_bulk_qty": 1,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          },
+          {
+            "id": 16,
+            "order_id": 9,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "sku": null,
+            "description": null,
+            "quantity": 2,
+            "unit": null,
+            "unit_price": 110,
+            "line_total": 220,
+            "sort": 1,
+            "tax_code_id": null,
+            "released_qty": 2,
+            "fulfillment_mode": "assembled",
+            "parent_order_item_id": null,
+            "dispatched_qty": 0,
+            "dispatched_bulk_qty": 0,
+            "cancelled_qty": 0,
+            "allocated_qty": 0,
+            "reserved_qty": 0
+          }
+        ],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "fulfillment": {
+          "ordered": 6,
+          "dispatched": 1,
+          "cancelled": 0,
+          "delivered": 1,
+          "held": 5,
+          "remaining": 5,
+          "state": "partially_fulfilled"
+        },
+        "trips": [
+          {
+            "id": 1,
+            "number": "RS-00001",
+            "released_at": "2026-10-26 07:32:02"
+          }
+        ],
+        "delivery_events": []
+      },
+      "saleAvailability": {
+        "ok": true,
+        "short_lines": 0,
+        "lines": [
+          {
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "ordered": 4,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 4,
+            "available": 10,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          },
+          {
+            "order_item_id": 16,
+            "item_id": 11,
+            "name": "Fictional controller · second sale line",
+            "ordered": 2,
+            "fulfillment_mode": "assembled",
+            "on_hand": 9,
+            "elsewhere_on_hand": 0,
+            "committed_elsewhere": 0,
+            "committed_orders": 0,
+            "kit_held": 0,
+            "repair_held": 0,
+            "covered_here": 2,
+            "available": 6,
+            "shortfall": 0,
+            "is_finished_product": false,
+            "has_bom": false,
+            "buildable": false,
+            "semi_built_available": 0,
+            "component_shortfalls": [],
+            "linked_job_orders": []
+          }
+        ],
+        "location_id": 1,
+        "location_name": "Main",
+        "uses_default_location": false,
+        "non_stock_lines": 0,
+        "purchase_requirements": [],
+        "linked_purchase_orders": [],
+        "revision": "fdce975dd39bd0b947f947be1761ba042bb7fc1789b722e719fc1d6b7ddc607a",
+        "order_status": "approved"
+      },
+      "receipt": {
+        "id": 1,
+        "number": "RS-00001",
+        "order_id": 9,
+        "released_by": 2,
+        "released_at": "2026-10-26 07:32:02",
+        "collected_by": "Fictional assigned staff receiver",
+        "vehicle_plate": null,
+        "notes": null,
+        "order_number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "customer_contact": null,
+        "order_status": "approved",
+        "released_by_name": "Fictional preparation clerk",
+        "handoff_type": "internal",
+        "receiver_user_id": 3,
+        "signature_attachment_id": 5,
+        "acknowledged": 1,
+        "approved_receiver_name": "Fictional assigned staff receiver",
+        "photo_count": 1,
+        "override_reason": null,
+        "override_by_name": null,
+        "items": [
+          {
+            "id": 1,
+            "slip_id": 1,
+            "order_item_id": 15,
+            "item_id": 11,
+            "name": "Fictional controller · first sale line",
+            "sku": null,
+            "unit": null,
+            "quantity": 1,
+            "unit_identifiers": null
+          }
+        ]
+      },
+      "meta": {
+        "entry": "trip",
+        "description": "Real partial warehouse-out: 1 shipped, 5 still to ship on two exact sale lines; new internal authority for the remainder."
+      }
+    }
+  },
+  "checks": [
+    "SO allocation creates a held quantity without deducting on-hand stock.",
+    "Saving JO picked totals reserves parts without deducting source stock.",
+    "The server refuses release of an incomplete JO kit and leaves stock unchanged.",
+    "Real unit lookup distinguishes available, same-order and other-order reservations; real batch lookup returns warehouse-scoped free quantities.",
+    "The real server refuses warehouse-out with a required package item missing and leaves on-hand stock unchanged.",
+    "Internal handoff authority is issued to an actual active staff account with no release code.",
+    "Real signed partial trip leaves 5 held units on exact sale lines; authoritative list/detail progress and receipt retain internal receiver/signature."
+  ],
+  "trace": [
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/locations",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/locations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/roles",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/users",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/finished-products/4",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/finished-products/5",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/inventory/1/adjust",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/inventory/2/adjust",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/inventory/3/adjust",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/1/authorizations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/1/accept-release",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/2/authorizations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/2/accept-release",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/2/context",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/1",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders/2/release",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/1",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/1/approve",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/2/approve",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/warehouse-accept",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/1/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/2/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/3/stock",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/prepare",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/1/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/2/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/3/stock",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/1/release",
+      "status": 409
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/1/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/2/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/3/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/1/context",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/2/context",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/job-orders/1",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/job-orders/2",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/job-orders/1/availability",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/job-orders/2/availability",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/1",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/1/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/2",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/2/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/3",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/3/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/4",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/4/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/5",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/5/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/1/unit?code=PREP-CTRL",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/2/unit?code=PREP-BOLT",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/2/unit?code=PREP-CABLE",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/2/unit?code=PREP-FUSE",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/2/unit?code=PREP-CTRL",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/2/unit?code=PREP-RELAY",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/finished-products/7",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/approve",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/warehouse-accept",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/prepare",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/release",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/accept",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/units",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/units/inspect",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/units",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/units/inspect",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/units",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/units/inspect",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/units",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/units/inspect",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/3/products-in",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/3/authorizations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/3/accept-release",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/4/authorizations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/4/accept-release",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders/4/release",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders/3/release",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/3/context",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/3/unit?code=VDS%3AUNIT%3A1",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/3/unit?code=VDS%3AUNIT%3A2",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/3/unit?code=VDS%3AUNIT%3A3",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/3/unit?code=VDS%3AUNIT%3A4",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/3/unit?code=QR-SERIAL-CTRL",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/finished-products/8",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/4/approve",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/warehouse-accept",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/prepare",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/4/release",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/4/accept",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/4/progress",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/4/progress",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/job-orders/4/receivable",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/job-orders/4/products-in",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/5/authorizations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/5/accept-release",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/6/authorizations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/6/accept-release",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/6/context",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders/6/release",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/5/context",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/5/unit?code=VDS%3ABATCH%3A1",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/5/unit?code=QR-BATCH-CTRL",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/6",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/6/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/7",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/7/stock",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/8",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/8/stock",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/finished-products/9",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/finished-products/9/package",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/7/authorizations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/7/accept-release",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/7/context",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders/7/release",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders/7/release-slip",
+      "status": 409
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/9",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/7/context",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/9",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/9/stock",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/users",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/finished-products/10",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/finished-products/10/package",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/8/authorizations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/8/accept-release",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/8/context",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders/8/release",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/8/context",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/10",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/10/stock",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/inventory",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/9/authorizations",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/9/accept-release",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/9/context",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/orders/9/release",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/attachments",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/orders/9/release-slip",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/release-slips/orders/9/authorizations",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/orders/9/context",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/orders/9",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/orders/9/availability",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/1",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/11",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/11/stock",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/roles",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/users",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/receivers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/release-slips/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/orders?type=sale",
+      "status": 200
+    }
+  ],
+  "sources": {
+    "src/modules/inventory/order-availability.ts": "e7f994a70633243c9bfedd286047843aa2eb362ba9bdfcbc0d81375aac7ef454",
+    "src/modules/inventory/release-auth.ts": "311381d440bbd4eb07a980a941158b153b513d809675e55528f4a0d6c653ff3a",
+    "src/modules/manufacturing/bom.routes.ts": "f5c94c69a5de291dbccb9eed885098304077a4c7c0484a7f0cd9b231e5cd3fb9",
+    "src/modules/inventory/batch-stock.ts": "df1da7e71ac5d2ae5d693b02419b4f4cc6c46d317f7475a9edb7a2f981c81339",
+    "src/modules/manufacturing/label-code.ts": "c73965687f59134db77e38d8acb45ec460f517c4124bcc1d03a38f6ac0e70655",
+    "src/modules/inventory/order-trips.ts": "4dacde6934511c61cce6195147eb275963e371a769aab9f67423e7e1cb6fd21a",
+    "src/modules/inventory/orders.routes.ts": "5baef55bd3b1beb62bc0d2562b1b3c99cf9c646e6bce6b552b38860bb4d68dd8",
+    "src/modules/inventory/release-slips.routes.ts": "fbd03fb277666bf66c44ba57516b45f14d2e0f806b36ff6f9e2b35e574142298",
+    "src/modules/manufacturing/job-orders.routes.ts": "e55151bb244f9ee57b84f213167df50b25787e2d4276f395878bb7fac5d4201c",
+    "src/shared/validation.ts": "9255552fd357edeac6ccc741dbeecb9f5cf9068996a4004cd0e79cc48d1a6d05"
+  },
+  "salesProfile": {
+    "id": 4,
+    "username": "flow_review_sales",
+    "full_name": "Fictional Sales clerk",
+    "role": "flow_review_sales",
+    "department_id": null,
+    "active": 1,
+    "password_change_required": 0,
+    "temporary_password_expires_at": null,
+    "department_name": null,
+    "permissions": [
+      "mobile.access",
+      "orders.authorize",
+      "inventory.view",
+      "inventory.mobile",
+      "orders.view",
+      "orders.create",
+      "orders.edit"
+    ],
+    "role_label": "Fictional Sales authority",
+    "employee": null,
+    "can_approve": false,
+    "modules": [
+      "inventory",
+      "sales",
+      "manufacturing",
+      "purchasing",
+      "hr",
+      "accounting",
+      "ai",
+      "mobile",
+      "email",
+      "quickbooks"
+    ],
+    "mfa_enabled": false,
+    "mfa_setup_required": false
+  },
+  "receivers": [
+    {
+      "id": 3,
+      "full_name": "Fictional assigned staff receiver"
+    }
+  ],
+  "releaseQueue": {
+    "to_accept": [],
+    "releasing": [
+      {
+        "id": 1,
+        "number": "SO-00001",
+        "status": "approved",
+        "customer_name": "Fictional preparation customer",
+        "order_date": null,
+        "expected_date": null,
+        "created_at": "2026-10-26 07:32:01",
+        "updated_at": "2026-10-26 07:32:01",
+        "warehouse_accepted_at": "2026-10-26 07:32:01",
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "location_name": "Main",
+        "qty_ordered": 4,
+        "qty_released": 0,
+        "authorization": {
+          "override": null,
+          "state": "valid",
+          "required": true,
+          "id": 1,
+          "mode": "pickup",
+          "recipient_name": "Fictional recipient",
+          "handoff_type": "external",
+          "receiver_user_id": null,
+          "token_required": true,
+          "receiver_active": null,
+          "id_reference": null,
+          "token_hint": "PICKUP-••••",
+          "valid_until": "2026-10-27 07:32:01",
+          "handoff_area": null,
+          "partial_allowed": true,
+          "revoke_reason": null
+        },
+        "summary": {
+          "first_name": "Fictional controller assembly",
+          "lines": 2
+        },
+        "delivery": null,
+        "open_reports": 0
+      },
+      {
+        "id": 2,
+        "number": "SO-00002",
+        "status": "approved",
+        "customer_name": "Fictional preparation customer",
+        "order_date": null,
+        "expected_date": null,
+        "created_at": "2026-10-26 07:32:01",
+        "updated_at": "2026-10-26 07:32:01",
+        "warehouse_accepted_at": "2026-10-26 07:32:01",
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "location_name": "Main",
+        "qty_ordered": 14,
+        "qty_released": 1,
+        "authorization": {
+          "override": null,
+          "state": "valid",
+          "required": true,
+          "id": 2,
+          "mode": "pickup",
+          "recipient_name": "Fictional recipient",
+          "handoff_type": "external",
+          "receiver_user_id": null,
+          "token_required": true,
+          "receiver_active": null,
+          "id_reference": null,
+          "token_hint": "PICKUP-••••",
+          "valid_until": "2026-10-27 07:32:01",
+          "handoff_area": null,
+          "partial_allowed": true,
+          "revoke_reason": null
+        },
+        "summary": {
+          "first_name": "Fictional Control cable",
+          "lines": 6
+        },
+        "delivery": null,
+        "open_reports": 0
+      },
+      {
+        "id": 3,
+        "number": "SO-00003",
+        "status": "approved",
+        "customer_name": "Fictional QR review customer",
+        "order_date": null,
+        "expected_date": null,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_by_name": "System Administrator",
+        "location_name": "Main",
+        "qty_ordered": 3,
+        "qty_released": 1,
+        "authorization": {
+          "override": null,
+          "state": "valid",
+          "required": true,
+          "id": 3,
+          "mode": "pickup",
+          "recipient_name": "Fictional recipient",
+          "handoff_type": "external",
+          "receiver_user_id": null,
+          "token_required": true,
+          "receiver_active": null,
+          "id_reference": null,
+          "token_hint": "PICKUP-••••",
+          "valid_until": "2026-10-27 07:32:02",
+          "handoff_area": null,
+          "partial_allowed": true,
+          "revoke_reason": null
+        },
+        "summary": {
+          "first_name": "Fictional serialized controller",
+          "lines": 1
+        },
+        "delivery": null,
+        "open_reports": 0
+      },
+      {
+        "id": 4,
+        "number": "SO-00004",
+        "status": "released",
+        "customer_name": "Fictional QR review customer",
+        "order_date": null,
+        "expected_date": null,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_by_name": "System Administrator",
+        "location_name": "Main",
+        "qty_ordered": 1,
+        "qty_released": 1,
+        "authorization": {
+          "override": null,
+          "state": "valid",
+          "required": true,
+          "id": 4,
+          "mode": "pickup",
+          "recipient_name": "Fictional recipient",
+          "handoff_type": "external",
+          "receiver_user_id": null,
+          "token_required": true,
+          "receiver_active": null,
+          "id_reference": null,
+          "token_hint": "PICKUP-••••",
+          "valid_until": "2026-10-27 07:32:02",
+          "handoff_area": null,
+          "partial_allowed": true,
+          "revoke_reason": null
+        },
+        "summary": {
+          "first_name": "Fictional serialized controller · another SO",
+          "lines": 1
+        },
+        "delivery": null,
+        "open_reports": 0
+      },
+      {
+        "id": 5,
+        "number": "SO-00005",
+        "status": "approved",
+        "customer_name": "Fictional QR review customer",
+        "order_date": null,
+        "expected_date": null,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_by_name": "System Administrator",
+        "location_name": "Main",
+        "qty_ordered": 6,
+        "qty_released": 0,
+        "authorization": {
+          "override": null,
+          "state": "valid",
+          "required": true,
+          "id": 5,
+          "mode": "pickup",
+          "recipient_name": "Fictional recipient",
+          "handoff_type": "external",
+          "receiver_user_id": null,
+          "token_required": true,
+          "receiver_active": null,
+          "id_reference": null,
+          "token_hint": "PICKUP-••••",
+          "valid_until": "2026-10-27 07:32:02",
+          "handoff_area": null,
+          "partial_allowed": true,
+          "revoke_reason": null
+        },
+        "summary": {
+          "first_name": "Fictional batch controller",
+          "lines": 1
+        },
+        "delivery": null,
+        "open_reports": 0
+      },
+      {
+        "id": 6,
+        "number": "SO-00006",
+        "status": "released",
+        "customer_name": "Fictional QR review customer",
+        "order_date": null,
+        "expected_date": null,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_by_name": "System Administrator",
+        "location_name": "Main",
+        "qty_ordered": 2,
+        "qty_released": 2,
+        "authorization": {
+          "override": null,
+          "state": "valid",
+          "required": true,
+          "id": 6,
+          "mode": "pickup",
+          "recipient_name": "Fictional recipient",
+          "handoff_type": "external",
+          "receiver_user_id": null,
+          "token_required": true,
+          "receiver_active": null,
+          "id_reference": null,
+          "token_hint": "PICKUP-••••",
+          "valid_until": "2026-10-27 07:32:02",
+          "handoff_area": null,
+          "partial_allowed": true,
+          "revoke_reason": null
+        },
+        "summary": {
+          "first_name": "Fictional batch controller · another SO",
+          "lines": 1
+        },
+        "delivery": null,
+        "open_reports": 0
+      },
+      {
+        "id": 7,
+        "number": "SO-00007",
+        "status": "released",
+        "customer_name": "Fictional checklist customer",
+        "order_date": null,
+        "expected_date": null,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "location_name": "Main",
+        "qty_ordered": 1,
+        "qty_released": 1,
+        "authorization": {
+          "override": null,
+          "state": "valid",
+          "required": true,
+          "id": 7,
+          "mode": "pickup",
+          "recipient_name": "Fictional recipient",
+          "handoff_type": "external",
+          "receiver_user_id": null,
+          "token_required": true,
+          "receiver_active": null,
+          "id_reference": null,
+          "token_hint": "PICKUP-••••",
+          "valid_until": "2026-10-27 07:32:02",
+          "handoff_area": null,
+          "partial_allowed": false,
+          "revoke_reason": null
+        },
+        "summary": {
+          "first_name": "Fictional release-package controller",
+          "lines": 1
+        },
+        "delivery": null,
+        "open_reports": 0
+      },
+      {
+        "id": 8,
+        "number": "SO-00008",
+        "status": "released",
+        "customer_name": "Fictional internal staff handoff",
+        "order_date": null,
+        "expected_date": null,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "location_name": "Main",
+        "qty_ordered": 1,
+        "qty_released": 1,
+        "authorization": {
+          "override": null,
+          "state": "valid",
+          "required": true,
+          "id": 8,
+          "mode": "pickup",
+          "recipient_name": "Fictional assigned staff receiver",
+          "handoff_type": "internal",
+          "receiver_user_id": 3,
+          "token_required": false,
+          "receiver_active": true,
+          "id_reference": null,
+          "token_hint": null,
+          "valid_until": "2026-10-27 07:32:02",
+          "handoff_area": null,
+          "partial_allowed": false,
+          "revoke_reason": null
+        },
+        "summary": {
+          "first_name": "Fictional internal-handoff controller",
+          "lines": 1
+        },
+        "delivery": null,
+        "open_reports": 0
+      },
+      {
+        "id": 9,
+        "number": "SO-00009",
+        "status": "approved",
+        "customer_name": "Fictional split-trip customer",
+        "order_date": null,
+        "expected_date": null,
+        "created_at": "2026-10-26 07:32:02",
+        "updated_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_at": "2026-10-26 07:32:02",
+        "warehouse_accepted_by_name": "Fictional preparation clerk",
+        "location_name": "Main",
+        "qty_ordered": 5,
+        "qty_released": 5,
+        "authorization": {
+          "override": null,
+          "state": "valid",
+          "required": true,
+          "id": 10,
+          "mode": "pickup",
+          "recipient_name": "Fictional assigned staff receiver",
+          "handoff_type": "internal",
+          "receiver_user_id": 3,
+          "token_required": false,
+          "receiver_active": true,
+          "id_reference": null,
+          "token_hint": null,
+          "valid_until": "2026-10-27 07:32:02",
+          "handoff_area": null,
+          "partial_allowed": true,
+          "revoke_reason": null
+        },
+        "summary": {
+          "first_name": "Fictional controller · first sale line",
+          "lines": 2
+        },
+        "delivery": null,
+        "open_reports": 0
+      }
+    ],
+    "completed": [
+      {
+        "id": 1,
+        "number": "RS-00001",
+        "order_id": 9,
+        "released_at": "2026-10-26 07:32:02",
+        "order_number": "SO-00009",
+        "customer_name": "Fictional split-trip customer",
+        "mode": "pickup",
+        "handoff_type": "internal"
+      }
+    ],
+    "authorization_required": true
+  },
+  "saleOrders": [
+    {
+      "id": 9,
+      "type": "sale",
+      "number": "SO-00009",
+      "customer_name": "Fictional split-trip customer",
+      "customer_contact": null,
+      "order_date": null,
+      "status": "approved",
+      "notes": null,
+      "currency": "PHP",
+      "subtotal": 620,
+      "tax_percent": 0,
+      "tax_amount": 0,
+      "total": 620,
+      "created_by": 1,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "supplier_id": null,
+      "expected_date": null,
+      "customer_id": null,
+      "tax_code_id": null,
+      "location_id": 1,
+      "fulfilled_at": null,
+      "released_at": "2026-10-26 07:32:02",
+      "released_by": 2,
+      "warehouse_accepted_by": 2,
+      "warehouse_accepted_at": "2026-10-26 07:32:02",
+      "created_by_name": "System Administrator",
+      "supplier_name": null,
+      "job_order_id": null,
+      "job_order_number": null,
+      "job_order_status": null,
+      "fulfillment_modes": "part",
+      "release_slip_number": "RS-00001",
+      "backordered": 0,
+      "fulfillment_remaining": 5,
+      "fulfillment_dispatched": 1
+    },
+    {
+      "id": 8,
+      "type": "sale",
+      "number": "SO-00008",
+      "customer_name": "Fictional internal staff handoff",
+      "customer_contact": null,
+      "order_date": null,
+      "status": "released",
+      "notes": null,
+      "currency": "PHP",
+      "subtotal": 100,
+      "tax_percent": 0,
+      "tax_amount": 0,
+      "total": 100,
+      "created_by": 1,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "supplier_id": null,
+      "expected_date": null,
+      "customer_id": null,
+      "tax_code_id": null,
+      "location_id": 1,
+      "fulfilled_at": null,
+      "released_at": "2026-10-26 07:32:02",
+      "released_by": 2,
+      "warehouse_accepted_by": 2,
+      "warehouse_accepted_at": "2026-10-26 07:32:02",
+      "created_by_name": "System Administrator",
+      "supplier_name": null,
+      "job_order_id": null,
+      "job_order_number": null,
+      "job_order_status": null,
+      "fulfillment_modes": "assembled",
+      "release_slip_number": null,
+      "backordered": 0,
+      "fulfillment_remaining": 1,
+      "fulfillment_dispatched": 0
+    },
+    {
+      "id": 7,
+      "type": "sale",
+      "number": "SO-00007",
+      "customer_name": "Fictional checklist customer",
+      "customer_contact": null,
+      "order_date": null,
+      "status": "released",
+      "notes": null,
+      "currency": "PHP",
+      "subtotal": 100,
+      "tax_percent": 0,
+      "tax_amount": 0,
+      "total": 100,
+      "created_by": 1,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "supplier_id": null,
+      "expected_date": null,
+      "customer_id": null,
+      "tax_code_id": null,
+      "location_id": 1,
+      "fulfilled_at": null,
+      "released_at": "2026-10-26 07:32:02",
+      "released_by": 2,
+      "warehouse_accepted_by": 2,
+      "warehouse_accepted_at": "2026-10-26 07:32:02",
+      "created_by_name": "System Administrator",
+      "supplier_name": null,
+      "job_order_id": null,
+      "job_order_number": null,
+      "job_order_status": null,
+      "fulfillment_modes": "assembled",
+      "release_slip_number": null,
+      "backordered": 0,
+      "fulfillment_remaining": 1,
+      "fulfillment_dispatched": 0
+    },
+    {
+      "id": 6,
+      "type": "sale",
+      "number": "SO-00006",
+      "customer_name": "Fictional QR review customer",
+      "customer_contact": null,
+      "order_date": null,
+      "status": "released",
+      "notes": null,
+      "currency": "PHP",
+      "subtotal": 200,
+      "tax_percent": 0,
+      "tax_amount": 0,
+      "total": 200,
+      "created_by": 1,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "supplier_id": null,
+      "expected_date": null,
+      "customer_id": null,
+      "tax_code_id": null,
+      "location_id": 1,
+      "fulfilled_at": null,
+      "released_at": "2026-10-26 07:32:02",
+      "released_by": 1,
+      "warehouse_accepted_by": 1,
+      "warehouse_accepted_at": "2026-10-26 07:32:02",
+      "created_by_name": "System Administrator",
+      "supplier_name": null,
+      "job_order_id": null,
+      "job_order_number": null,
+      "job_order_status": null,
+      "fulfillment_modes": "assembled",
+      "release_slip_number": null,
+      "backordered": 0,
+      "fulfillment_remaining": 2,
+      "fulfillment_dispatched": 0
+    },
+    {
+      "id": 5,
+      "type": "sale",
+      "number": "SO-00005",
+      "customer_name": "Fictional QR review customer",
+      "customer_contact": null,
+      "order_date": null,
+      "status": "approved",
+      "notes": null,
+      "currency": "PHP",
+      "subtotal": 600,
+      "tax_percent": 0,
+      "tax_amount": 0,
+      "total": 600,
+      "created_by": 1,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "supplier_id": null,
+      "expected_date": null,
+      "customer_id": null,
+      "tax_code_id": null,
+      "location_id": 1,
+      "fulfilled_at": null,
+      "released_at": null,
+      "released_by": null,
+      "warehouse_accepted_by": 1,
+      "warehouse_accepted_at": "2026-10-26 07:32:02",
+      "created_by_name": "System Administrator",
+      "supplier_name": null,
+      "job_order_id": null,
+      "job_order_number": null,
+      "job_order_status": null,
+      "fulfillment_modes": "assembled",
+      "release_slip_number": null,
+      "backordered": 1,
+      "fulfillment_remaining": 6,
+      "fulfillment_dispatched": 0
+    },
+    {
+      "id": 4,
+      "type": "sale",
+      "number": "SO-00004",
+      "customer_name": "Fictional QR review customer",
+      "customer_contact": null,
+      "order_date": null,
+      "status": "released",
+      "notes": null,
+      "currency": "PHP",
+      "subtotal": 100,
+      "tax_percent": 0,
+      "tax_amount": 0,
+      "total": 100,
+      "created_by": 1,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "supplier_id": null,
+      "expected_date": null,
+      "customer_id": null,
+      "tax_code_id": null,
+      "location_id": 1,
+      "fulfilled_at": null,
+      "released_at": "2026-10-26 07:32:02",
+      "released_by": 1,
+      "warehouse_accepted_by": 1,
+      "warehouse_accepted_at": "2026-10-26 07:32:02",
+      "created_by_name": "System Administrator",
+      "supplier_name": null,
+      "job_order_id": null,
+      "job_order_number": null,
+      "job_order_status": null,
+      "fulfillment_modes": "assembled",
+      "release_slip_number": null,
+      "backordered": 0,
+      "fulfillment_remaining": 1,
+      "fulfillment_dispatched": 0
+    },
+    {
+      "id": 3,
+      "type": "sale",
+      "number": "SO-00003",
+      "customer_name": "Fictional QR review customer",
+      "customer_contact": null,
+      "order_date": null,
+      "status": "approved",
+      "notes": null,
+      "currency": "PHP",
+      "subtotal": 300,
+      "tax_percent": 0,
+      "tax_amount": 0,
+      "total": 300,
+      "created_by": 1,
+      "created_at": "2026-10-26 07:32:02",
+      "updated_at": "2026-10-26 07:32:02",
+      "supplier_id": null,
+      "expected_date": null,
+      "customer_id": null,
+      "tax_code_id": null,
+      "location_id": 1,
+      "fulfilled_at": null,
+      "released_at": "2026-10-26 07:32:02",
+      "released_by": 1,
+      "warehouse_accepted_by": 1,
+      "warehouse_accepted_at": "2026-10-26 07:32:02",
+      "created_by_name": "System Administrator",
+      "supplier_name": null,
+      "job_order_id": null,
+      "job_order_number": null,
+      "job_order_status": null,
+      "fulfillment_modes": "assembled",
+      "release_slip_number": null,
+      "backordered": 1,
+      "fulfillment_remaining": 3,
+      "fulfillment_dispatched": 0
+    },
+    {
+      "id": 2,
+      "type": "sale",
+      "number": "SO-00002",
+      "customer_name": "Fictional preparation customer",
+      "customer_contact": null,
+      "order_date": null,
+      "status": "approved",
+      "notes": null,
+      "currency": "PHP",
+      "subtotal": 310,
+      "tax_percent": 0,
+      "tax_amount": 0,
+      "total": 310,
+      "created_by": 1,
+      "created_at": "2026-10-26 07:32:01",
+      "updated_at": "2026-10-26 07:32:01",
+      "supplier_id": null,
+      "expected_date": null,
+      "customer_id": null,
+      "tax_code_id": null,
+      "location_id": 1,
+      "fulfilled_at": null,
+      "released_at": "2026-10-26 07:32:01",
+      "released_by": 2,
+      "warehouse_accepted_by": 2,
+      "warehouse_accepted_at": "2026-10-26 07:32:01",
+      "created_by_name": "System Administrator",
+      "supplier_name": null,
+      "job_order_id": null,
+      "job_order_number": null,
+      "job_order_status": null,
+      "fulfillment_modes": "ckd",
+      "release_slip_number": null,
+      "backordered": 1,
+      "fulfillment_remaining": 14,
+      "fulfillment_dispatched": 0
+    },
+    {
+      "id": 1,
+      "type": "sale",
+      "number": "SO-00001",
+      "customer_name": "Fictional preparation customer",
+      "customer_contact": null,
+      "order_date": null,
+      "status": "approved",
+      "notes": null,
+      "currency": "PHP",
+      "subtotal": 410,
+      "tax_percent": 0,
+      "tax_amount": 0,
+      "total": 410,
+      "created_by": 1,
+      "created_at": "2026-10-26 07:32:01",
+      "updated_at": "2026-10-26 07:32:01",
+      "supplier_id": null,
+      "expected_date": null,
+      "customer_id": null,
+      "tax_code_id": null,
+      "location_id": 1,
+      "fulfilled_at": null,
+      "released_at": null,
+      "released_by": null,
+      "warehouse_accepted_by": 2,
+      "warehouse_accepted_at": "2026-10-26 07:32:01",
+      "created_by_name": "System Administrator",
+      "supplier_name": null,
+      "job_order_id": null,
+      "job_order_number": null,
+      "job_order_status": null,
+      "fulfillment_modes": "assembled",
+      "release_slip_number": null,
+      "backordered": 1,
+      "fulfillment_remaining": 4,
+      "fulfillment_dispatched": 0
+    }
+  ]
+}

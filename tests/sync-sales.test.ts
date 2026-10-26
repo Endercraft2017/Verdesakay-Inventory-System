@@ -214,3 +214,38 @@ describe('the cloud changed meanwhile (D6) and goods left beyond stock (D1)', ()
     expect((await clashes()).some((c) => c.includes(`Delivery ${d.number} was cancelled on the cloud`))).toBe(true);
   });
 });
+
+describe('internal signed handoff across site sync', () => {
+  it('replays the assignment-bound signature and stock movement from the offline host exactly once', async () => {
+    const stock=(await ok(api().post('/api/inventory').set(T.cloudHdr()).send({ name:'Internal handoff sync stock',quantity:0 }),201)).body.id as number;
+    await ok(api().post(`/api/inventory/${stock}/adjust`).set(T.cloudHdr()).send({change:1,location_id:bay,reason:'Internal handoff test'}));
+    const order=(await ok(api().post('/api/orders').set(T.cloudHdr()).send({type:'sale',location_id:bay,customer_name:'Fictional internal receiver',
+      items:[{item_id:stock,name:'Internal handoff sync stock',quantity:1,unit_price:1}]}),201)).body;
+    const receiver=(T.cloudDb().prepare("SELECT id FROM users WHERE username='admin'").get() as {id:number}).id;
+    await ok(api().post(`/api/orders/${order.id}/status`).set(T.cloudHdr()).send({status:'approved'}));
+    await ok(api().post(`/api/orders/${order.id}/accept-release`).set(T.cloudHdr()).send({}));
+    await ok(api().post(`/api/orders/${order.id}/release`).set(T.cloudHdr()).send({bulk:[{item_id:stock,quantity:1}]}));
+    const issued=(await ok(api().post(`/api/release-slips/orders/${order.id}/authorizations`).set(T.cloudHdr())
+      .send({mode:'pickup',handoff_type:'internal',receiver_user_id:receiver}),201)).body;
+    expect(issued.token).toBeNull();
+    await T.hostRound();T.cutOff('host');
+    const signature=(await ok(api().post('/api/attachments').set(T.hostHdr()).field('kind','release_acknowledgment')
+      .field('ref_id',String(issued.authorization.id)).attach('image',Buffer.from('signed-internal-receiver'),'signature.png'),201)).body.id as number;
+    const payload={handoff_type:'internal',authorization_id:issued.authorization.id,receiver_user_id:receiver,
+      signature_attachment_id:signature,acknowledged:true,collected_by:'Ignored request name'};
+    const noSignature=await api().post(`/api/orders/${order.id}/release-slip`).set(T.hostHdr()).send({...payload,signature_attachment_id:null});
+    expect(noSignature.status).toBe(409);expect(noSignature.body.blocked).toBe('acknowledgment');
+    const key=`signed-site-handoff-${order.id}`;
+    const slip=(await ok(api().post(`/api/orders/${order.id}/release-slip`).set(T.hostHdr()).set('Idempotency-Key',key).send(payload),201)).body.id as number;
+    T.reconnect('host');const result=await T.hostRound();
+    expect(result.pushed.filter(p=>p.state!=='confirmed')).toEqual([]);
+    expect(qtyOf(T.cloudDb(),stock)).toBe(0);expect(qtyOf(T.hostDb(),stock)).toBe(0);
+    expect(T.cloudDb().prepare('SELECT handoff_type,receiver_user_id,signature_attachment_id FROM release_slip_details WHERE slip_id=?').get(slip))
+      .toEqual({handoff_type:'internal',receiver_user_id:receiver,signature_attachment_id:signature});
+    expect(T.cloudDb().prepare('SELECT kind,ref_id FROM attachments WHERE id=?').get(signature)).toEqual({kind:'release',ref_id:slip});
+    expect(fs.existsSync(path.join(T.dbmod.uploadDir('default'),releasePhotos(T.cloudDb(),slip)[0]!))).toBe(true);
+    await T.hostRound();
+    expect(T.cloudDb().prepare('SELECT COUNT(*) AS n FROM release_slips WHERE order_id=?').get(order.id)).toEqual({n:1});
+    expect(qtyOf(T.cloudDb(),stock)).toBe(0);
+  });
+});

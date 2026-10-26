@@ -12,8 +12,8 @@
     qa: { label: 'QA personnel', glyph: '◆', accent: 'qa' },
     // RTS shares the warehouse green (no accent); its chip mark is a bar (74:21).
     rts: { label: 'RTS clerk', glyph: '▬' },
-    // Releasing personnel: royal blue (78:21); chip mark is an exit arrow.
-    releasing: { label: 'Releasing', glyph: '⇥', accent: 'rel' },
+    // Releasing uses the shared warehouse green; chip mark is an exit arrow.
+    releasing: { label: 'Releasing', glyph: '⇥' },
     // Parts clerk: burnt orange (83:21); chip mark is a dot.
     parts: { label: 'Parts clerk', glyph: '●', accent: 'parts' },
   };
@@ -26,7 +26,7 @@
       var warehouseTask = ['warehouse','parts','qc','qa','rts','releasing'].includes(opts.role);
       if (opts.title) MApp.setTitle(opts.title);
       view.setAttribute('data-figma-node', opts.node || '');
-      view.innerHTML = '<section class="rk-page' + (role.accent ? ' rk-accent-' + role.accent : '') + (warehouseTask ? ' rk-warehouse-task' : '') + '">' +
+      view.innerHTML = '<section class="rk-page' + (role.accent ? ' rk-accent-' + role.accent : '') + (warehouseTask ? ' rk-warehouse-task' : '') + (opts.task ? ' rk-workflow-task' : '') + '">' +
         '<header class="rk-head">' +
           (opts.back ? '<button class="rk-back" type="button">‹ ' + e(opts.backLabel || 'Back') + '</button><br>' : '') +
           '<h1>' + e(opts.title) + '</h1>' + (opts.subtitle ? '<p>' + e(opts.subtitle) + '</p>' : '') +

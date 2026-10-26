@@ -134,6 +134,17 @@
     document.addEventListener('keydown',function(e){if(e.altKey&&e.key.toLowerCase()==='r'&&refreshAction()){e.preventDefault();refresh();}});
     var observer=new MutationObserver(function(records){if(!window.document)return;records.forEach(function(record){var select=record.target.nodeType===1?record.target.closest('select'):record.target.parentElement?.closest('select');if(select)controls.get(select)?.close(true);});sync();menus.forEach(function(control){if(!control.select.isConnected){control.close(true);control.menu.remove();menus.delete(control);}});});observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','selected','hidden','value','label']});sync();
   }
-  window.mScreenUX={bindRefresh:bindRefresh,refresh:refresh,navigation:navigation,sync:sync};
+  // A blocked action stays focusable so it can explain its prerequisite. Busy
+  // submissions still use native disabled controls and cannot reach this helper.
+  function reject(control, message, text, event) {
+    if (!control?.isConnected || !message?.isConnected) return;
+    message.textContent=text; message.hidden=false; control.classList.add('m-ux-rejected');
+    control.setAttribute('aria-describedby',message.id);
+    control.getAnimations().forEach(function(a){if(a.id==='blocked-action')a.cancel();});
+    if (event?.detail && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      control.animate([{transform:'translateX(0)'},{transform:'translateX(-3px)'},{transform:'translateX(3px)'},{transform:'translateX(-2px)'},{transform:'translateX(0)'}],{id:'blocked-action',duration:180,easing:'cubic-bezier(.2,.8,.2,1)'});
+    }
+  }
+  window.mScreenUX={bindRefresh:bindRefresh,refresh:refresh,navigation:navigation,sync:sync,reject:reject};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

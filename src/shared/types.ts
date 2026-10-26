@@ -475,6 +475,11 @@ export interface ReleaseSlip {
   customer_name?: string | null;
   released_by_name?: string | null;
   photo_count?: number;
+  handoff_type?:'external'|'internal';
+  receiver_user_id?:number|null;
+  signature_attachment_id?:number|null;
+  acknowledged?:number;
+  approved_receiver_name?:string|null;
   /** Set when a supervisor's override stood in for the release token. */
   override_reason?: string | null;
   override_by_name?: string | null;

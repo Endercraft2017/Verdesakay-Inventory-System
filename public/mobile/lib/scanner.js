@@ -94,7 +94,7 @@
     observer.observe(document.body, { childList: true, subtree: true, attributes:true, attributeFilter:['class','hidden'] }); window.addEventListener('hashchange', departed); window.addEventListener('pagehide', pageLeft);
 
     var lastCode = null, lastAt = 0;
-    function finish(text) {
+    function finish(text, source) {
       if (!usable() || !text) return;
       text = String(text).trim();
       if (opts.continuous) {
@@ -102,11 +102,11 @@
         if (text === lastCode && now - lastAt < 1200) return;   // debounce repeat reads
         lastCode = text; lastAt = now;
         try { if (navigator.vibrate) navigator.vibrate(30); } catch (e) { /* ignore */ }
-        opts.onResult(text);
+        opts.onResult(text, { source: source || 'camera', capturedAt: Date.now() });
         return;
       }
       stop('result');
-      opts.onResult(text);
+      opts.onResult(text, { source: source || 'camera', capturedAt: Date.now() });
     }
 
     overlay.querySelector('.m-scan-x').onclick = stop;
@@ -136,8 +136,8 @@
       var inp = e.target.querySelector('input');
       var v = inp.value.trim();
       if (!v) { overlay.querySelector('.m-scanner-error').textContent = 'Enter a barcode or QR code.'; inp.setAttribute('aria-invalid','true'); inp.focus(); return; }
-      if (opts.continuous) { lastCode = null; opts.onResult(v); inp.value = ''; inp.focus(); }
-      else finish(v);
+      if (opts.continuous) { lastCode = null; opts.onResult(v, { source: 'manual', capturedAt: Date.now() }); inp.value = ''; inp.focus(); }
+      else finish(v, 'manual');
     };
 
     overlay.querySelector('input')?.addEventListener('input',function () { this.removeAttribute('aria-invalid'); overlay.querySelector('.m-scanner-error').textContent = ''; });
@@ -224,30 +224,40 @@
 
   /** Physical sticker verification is separate from finding/selecting a record.
       New selections start unverified. Recovery retries the already-reviewed request. */
-  function verification(host, codes, onChange) {
+  function verification(host, codes, onChange, options) {
+    options = options || {};
     var entries = codes.map(function (entry) { return typeof entry === 'string' ? {code:entry,aliases:[]} : entry; });
     var expected = entries.map(function (entry) { return String(entry.code).trim(); });
-    var seen = {}, active = null;
-    function complete() { return expected.length > 0 && expected.every(function (code) { return seen[code.toLowerCase()]; }); }
+    var seen = {}, active = null, verifiedAt = Date.now();
+    function matches(value) { return entries.filter(function (entry) { return [entry.code].concat(entry.aliases || []).some(function(v){return String(v).trim().toLowerCase()===String(value).trim().toLowerCase();}); }); }
+    if (options.initial && options.initial.source === 'camera' && (!options.isCurrent || options.isCurrent())) {
+      var initial = matches(options.initial.code);
+      if (initial.length === 1) { seen[String(initial[0].code).toLowerCase()] = true; verifiedAt=options.initial.capturedAt||Date.now(); }
+    }
+    function complete() { return (!options.maxAge || Date.now()-verifiedAt < options.maxAge) && (!options.isCurrent || options.isCurrent()) && expected.length > 0 && expected.every(function (code) { return seen[code.toLowerCase()]; }); }
     function paint() {
-      host.innerHTML = '<div class="rk-card rk-field"><small>Attached QR sticker verification</small><p data-scan-status></p><button type="button" class="rk-btn secondary" data-verify-label>Scan attached sticker' + (expected.length > 1 ? 's' : '') + '</button></div>';
+      host.innerHTML = '<div class="rk-card rk-field"><small>Physical label</small><p data-scan-status></p><button type="button" class="rk-btn secondary" data-verify-label>' + (complete() ? 'Scan a different label' : 'Scan attached sticker' + (expected.length > 1 ? 's' : '')) + '</button></div>';
       host.querySelector('[data-scan-status]').textContent = expected.filter(function (code) { return seen[code.toLowerCase()]; }).length + ' of ' + expected.length + ' labels scanned';
+      if (complete()) host.querySelector('[data-scan-status]').textContent = 'Label verified · no second scan needed';
+      else if (options.reason) host.querySelector('[data-scan-status]').textContent = typeof options.reason==='function'?options.reason():options.reason;
+      if(options.initial && complete()) host.querySelector('[data-verify-label]').hidden=true;
       host.querySelector('[data-verify-label]').onclick = function () {
         if (active) active.close();
-        active = window.mScanner.open({ title: 'Scan the attached QR sticker', continuous: true, allowManual: false, onResult: function (value) {
-          if (!host.isConnected) { active.close(); return; }
+        seen = {}; if (onChange) onChange(false);
+        active = window.mScanner.open({ title: 'Scan the attached QR sticker', continuous: true, allowManual: false, onResult: function (value, metadata) {
+          if (!host.isConnected) { active?.close(); return; }
           var code = String(value || '').trim().toLowerCase();
-          var matches = entries.filter(function (entry) { return [entry.code].concat(entry.aliases || []).some(function(v){return String(v).trim().toLowerCase()===code;}); });
-          if (matches.length !== 1) { mToast('Wrong or ambiguous label. Scan a sticker for the selected stock.', 'err'); return; }
-          seen[String(matches[0].code).toLowerCase()] = true;
-          if (complete()) active.close();
+          var found = matches(code);
+          if (metadata?.source === 'manual' || found.length !== 1 || options.isCurrent && !options.isCurrent()) { mToast('Wrong, stale or ambiguous label. Scan a sticker for the selected stock.', 'err'); return; }
+          seen[String(found[0].code).toLowerCase()] = true; verifiedAt=Date.now();
+          if (complete()) active?.close();
           paint();
         } });
       };
       if (onChange) onChange(complete());
     }
     paint();
-    return { complete: complete };
+    return { complete: complete, refresh: paint };
   }
 
   window.mScanner = { open: open, supported: secureCamera, verification: verification };

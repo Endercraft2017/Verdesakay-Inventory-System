@@ -16,10 +16,10 @@
   function stage(order, queue) {
     var status = String(order.status || '').toLowerCase();
     if (status === 'cancelled') return 'Cancelled';
-    if (status === 'completed' || status === 'fulfilled') return 'Complete';
-    if (order.release_slip_number && !order.backordered) return 'Shipped';
-    if (status === 'released' || order.release_slip_number || (queue && queue.releasing.some(function (r) { return Number(r.id) === Number(order.id); }))) return 'Picking & release';
-    if (status === 'approved' || (queue && queue.to_accept.some(function (r) { return Number(r.id) === Number(order.id); }))) return 'Awaiting warehouse';
+    var phase=mSaleUI.fulfillmentStage(order,queue);
+    if(phase===3)return status==='completed'||status==='fulfilled'?'Complete':'Shipped';
+    if(phase===2)return 'Picking & release';
+    if(phase===1)return 'Awaiting warehouse';
     return 'CSR review';
   }
   function openOrder(host) {

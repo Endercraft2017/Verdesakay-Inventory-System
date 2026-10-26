@@ -11,12 +11,13 @@
   };
 
   async function open(orderId, number, onChange) {
-    let data, reports, policy;
+    let data, reports, policy, receivers;
     try {
-      [data, reports, policy] = await Promise.all([
+      [data, reports, policy, receivers] = await Promise.all([
         API.get('/release-slips/orders/' + orderId + '/authorizations'),
         API.get('/release-slips/reports/list?order_id=' + orderId),
         API.get('/release-slips/policy'),
+        API.get('/release-slips/receivers'),
       ]);
     } catch (e) { UI.toast(e.message, 'error'); return; }
     const cur = data.current || { state: 'none' };
@@ -28,17 +29,19 @@
         <div class="panel" style="padding:12px 14px">
           ${cur.state === 'none' ? '<div class="muted">No authorization issued.' + (data.required ? ' <b>Required by company policy</b> — the warehouse can’t release this order without one.' : ' Optional: without one the releaser records the recipient at handoff.') + '</div>'
             : `<div><span class="badge-pill status-${cur.state === 'valid' ? 'approved' : 'cancelled'}">${UI.esc(cur.state)}</span>
-                 <b style="margin-left:6px">${UI.esc(MODES[cur.mode] || '')}</b> · ${UI.esc(cur.recipient_name)}${cur.id_reference ? ' · ID ' + UI.esc(cur.id_reference) : ''}</div>
-               ${active ? `<div style="margin-top:8px;font-size:18px;letter-spacing:.06em"><b>${UI.esc(active.token)}</b>
+                 <b style="margin-left:6px">${UI.esc(cur.handoff_type==='internal'?'Internal staff handoff':MODES[cur.mode] || '')}</b> · ${UI.esc(cur.recipient_name)}${cur.id_reference ? ' · ID ' + UI.esc(cur.id_reference) : ''}</div>
+               ${cur.handoff_type==='internal'?'<div class="muted" style="margin-top:8px">Internal staff handoff · signed acknowledgment required · no release code.</div>':active ? `<div style="margin-top:8px;font-size:18px;letter-spacing:.06em"><b>${UI.esc(active.token)}</b>
                    <span class="muted" style="font-size:12px;letter-spacing:0"> — give this to the recipient · valid until ${UI.esc(UI.fmtDate ? UI.fmtDate(active.valid_until + 'Z') : active.valid_until)}</span></div>` : ''}
                <div class="muted" style="margin-top:4px">${cur.handoff_area ? 'Handoff: ' + UI.esc(cur.handoff_area) + ' · ' : ''}Partial release ${cur.partial_allowed ? '<b>allowed</b>' : 'not allowed'}${cur.revoke_reason ? ' · revoked: ' + UI.esc(cur.revoke_reason) : ''}</div>
                ${cur.override ? `<div class="muted" style="margin-top:4px">Token override ${UI.esc(cur.override.status)}${cur.override.decided_by_name ? ' by ' + UI.esc(cur.override.decided_by_name) : ''}:
                    ${UI.esc(cur.override.decision_note || cur.override.reason)}</div>` : ''}`}
         </div>
         <h4 style="margin:14px 0 6px">${active ? 'Replace with a new authorization' : 'Issue an authorization'}</h4>
+        <div class="field-row"><div><label for="ra-handoff-type">Handoff type</label><select id="ra-handoff-type" data-f="handoff_type"><option value="external">Customer / third-party collection · release code</option><option value="internal">Internal staff handoff · signed acknowledgment</option></select></div></div>
+        <div data-staff-row hidden><label for="ra-staff-receiver">Assigned staff receiver <span class="req">*</span></label><select id="ra-staff-receiver" data-f="receiver_user_id"><option value="">Choose staff receiver</option>${receivers.map(u=>`<option value="${u.id}">${UI.esc(u.full_name)}</option>`).join('')}</select></div>
         <div class="field-row">
-          <div><label>Mode</label><select data-f="mode"><option value="pickup">Customer pickup</option><option value="delivery">Delivery</option></select></div>
-          <div><label>Approved recipient <span class="req">*</span></label><input data-f="recipient_name" placeholder="Name of who will receive the goods" /></div>
+          <div><label>Mode</label><select data-f="mode"><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select></div>
+          <div data-external-row><label>Approved recipient <span class="req">*</span></label><input data-f="recipient_name" placeholder="Name of who will receive the goods" /></div>
         </div>
         <div class="field-row" style="margin-top:8px">
           <div><label>ID reference</label><input data-f="id_reference" placeholder="Only the last 4 characters are kept" /></div>
@@ -64,17 +67,19 @@
       cancelText: 'Close',
       onOpen: (ov) => {
         const val = (k) => ov.querySelector(`[data-f="${k}"]`);
+        val('handoff_type').onchange=()=>{const internal=val('handoff_type').value==='internal';ov.querySelector('[data-staff-row]').hidden=!internal;ov.querySelector('[data-external-row]').hidden=internal;val('id_reference').disabled=internal;};
         ov.querySelector('#ra-issue').onclick = async (ev) => {
           const body = {
-            mode: val('mode').value, recipient_name: val('recipient_name').value.trim(), id_reference: val('id_reference').value.trim() || null,
+            mode: val('mode').value,handoff_type:val('handoff_type').value,receiver_user_id:val('handoff_type').value==='internal'?Number(val('receiver_user_id').value)||null:null,recipient_name: val('recipient_name').value.trim(), id_reference: val('id_reference').value.trim() || null,
             valid_hours: Number(val('valid_hours').value) || 24, handoff_area: val('handoff_area').value.trim() || null,
             partial_allowed: val('partial_allowed').checked,
           };
-          if (!body.recipient_name) { UI.toast('Enter the approved recipient', 'error'); return; }
+          if(body.handoff_type==='internal'&&!body.receiver_user_id){UI.toast('Choose the assigned staff receiver','error');return;}
+          if (body.handoff_type==='external'&&!body.recipient_name) { UI.toast('Enter the approved recipient', 'error'); return; }
           ev.target.disabled = true;
           try {
             const r = await API.post('/release-slips/orders/' + orderId + '/authorizations', body);
-            UI.toast('Authorization issued — token ' + r.token, 'success');
+            UI.toast(r.authorization.handoff_type==='internal'?'Internal handoff assigned — staff acknowledgment required':'Authorization issued — token '+r.token,'success');
             m.close(); if (onChange) onChange(); open(orderId, number, onChange);
           } catch (e) { UI.toast(e.message, 'error'); ev.target.disabled = false; }
         };

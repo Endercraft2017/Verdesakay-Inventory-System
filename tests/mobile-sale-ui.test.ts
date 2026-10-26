@@ -40,3 +40,27 @@ it('actual dates require successful handoff status and courier dates never mean 
     expect(html).not.toMatch(/FAILED-DROP|NO-DATE|input/);
   } finally { dom.window.close(); }
 });
+
+it('a first trip never marks an order complete while authoritative stock demand remains', () => {
+  const { dom, win } = setup();
+  try {
+    const partial = { id: 42, status: 'approved', release_slip_number: 'RS-1', backordered: 0, fulfillment_remaining: 3, fulfillment_dispatched: 1 };
+    expect(win.mSaleUI.fulfillmentStage(partial, {})).toBe(2);
+    expect(win.mSaleUI.fulfillmentStage({ ...partial, fulfillment_remaining: 0, fulfillment_dispatched: 4 }, {})).toBe(3);
+    expect(win.mSaleUI.fulfillmentStage({ ...partial, fulfillment: { remaining: 3, dispatched: 1 }, fulfillment_remaining: 0 }, {})).toBe(2);
+  } finally { dom.window.close(); }
+});
+it('fulfillment details keep shipped, held, remaining and CKD kit quantities distinct', () => {
+  const { dom, win } = setup();
+  try {
+    win.RoleUI.lines = (rows: unknown) => JSON.stringify(rows);
+    const rows = win.mSaleUI.orderProgress({ items: [
+      { id: 1, item_id: 1, name: 'Exact sale line', quantity: 4, dispatched_qty: 1, dispatched_bulk_qty: 1, released_qty: 3, unit: 'pcs' },
+      { id: 2, item_id: 2, name: 'CKD product', quantity: 2, dispatched_qty: 0, fulfillment_mode: 'ckd' },
+      { id: 3, item_id: 3, name: 'Bolt', quantity: 6, released_qty: 3, parent_order_item_id: 2 },
+      { id: 4, item_id: 4, name: 'Cable', quantity: 4, released_qty: 2, parent_order_item_id: 2 },
+    ] });
+    expect(rows).toContain('1 pcs shipped');expect(rows).toContain('2 pcs held · 3 pcs still to ship');
+    expect(rows).toContain('1 kits held · 2 kits still to ship');expect(rows).not.toContain('Line #3');
+  } finally { dom.window.close(); }
+});

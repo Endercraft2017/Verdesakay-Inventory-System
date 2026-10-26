@@ -302,3 +302,48 @@ empty queue. Keep known records and counts visible during checks; reconcile fres
 completion/error states. Details and actions continue to read/check live state.
 Measure cold and warm readiness independently from network response completion;
 label injected-delay browser timings accurately and retain physical-device limits.
+
+## SO picking proposal — 2026-10-26 (review, not rolled out)
+
+Accepted, authorized orders can open directly in the picking workspace. Keep
+order, recipient and source visible; perform label lookup, exact sale-line choice
+and allocation inline. Preserve explicit warehouse acceptance and authority
+exceptions. Confirmed actions reload the current record through MApp's existing
+`t` refresh parameter so same-screen allocation does not add Back entries or
+leave an old busy form. Unknown/refused writes keep native immutable recovery.
+
+Use shared `mScreenUX.reject` for focusable blocked actions that explain their
+prerequisite: guarded `aria-disabled`, persistent announced inline text and red
+outline. Pointer feedback is an interruptible 180ms transform shake; keyboard and
+reduced motion use static feedback. Sending actions remain natively disabled.
+The shared bottom bar uses the existing opaque surface token to keep its text
+contrast independent of content scrolling behind it.
+
+Camera scan evidence and manual code entry remain distinct. An exact matching
+physical label can satisfy SO verification within the same account/server,
+order/warehouse, authorization, saved line/held snapshot, route and five-minute
+lifetime. Do not persist evidence or trust URL parameters to seed it. Required
+specific serial/batch labels cannot be replaced with generic product identity.
+
+CKD summaries count complete kits from the saved component ratios, with exact
+component allocations and visible shortage totals underneath. Large manifests
+use bounded searchable/paged detail. The prepared-kit/package manifest reader is
+an isolated preview proposal, not an existing production capability: authoritative
+identity, contents revision, physical verification/sealing, tracking assignments,
+atomic consumption and recovery must exist before production use.
+
+### QR-specific picking follow-up (proposal)
+
+Use authoritative lookup type to choose the action. A verified unique physical
+unit QR adds exactly one to an eligible exact sale line without a quantity form
+or another confirmation. Resolve a genuinely ambiguous sale line explicitly.
+Manual entry remains a lookup until its matching physical label is scanned.
+Repeated scans of a unit already on the same SO never increment its allocation.
+
+Batch QRs retain a quantity field. Show batch free quantity at the warehouse and
+remaining exact-line demand separately; cap the input by those and shared stock.
+Reread the batch and SO before submitting, retain the entered quantity when the
+cap changes, and preserve the server's final race check. A changed order context
+must be reviewed before allocation. Both lookup-time and submission-time unit
+conflicts name the SO holding the unit, with shared red feedback and accessible
+recovery text. Stock is reserved, not physically deducted during allocation.

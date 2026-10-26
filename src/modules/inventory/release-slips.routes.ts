@@ -79,7 +79,7 @@ router.get('/queue', viewGate, (req, res) => {
     r.open_reports = queryOne<{ n: number }>("SELECT COUNT(*) AS n FROM release_reports WHERE order_id = ? AND status = 'open'", id)!.n;
   }
   const completed = queryAll(
-    `SELECT rs.id, rs.number, rs.order_id, rs.released_at, o.number AS order_number, o.customer_name, d.mode
+    `SELECT rs.id, rs.number, rs.order_id, rs.released_at, o.number AS order_number, o.customer_name, d.mode, d.handoff_type
      FROM release_slips rs JOIN orders o ON o.id = rs.order_id LEFT JOIN release_slip_details d ON d.slip_id = rs.id
      WHERE rs.released_by = ? AND rs.released_at >= datetime('now', 'start of day') ORDER BY rs.id DESC LIMIT 50`,
     req.user!.id
@@ -100,11 +100,11 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
   const order = saleOrder(id);
   if (!order) { res.status(404).json({ error: 'Sale order not found' }); return; }
   const lines = queryAll(
-    `SELECT oi.id, oi.item_id, oi.name, oi.sku, oi.unit_price, oi.quantity, oi.released_qty, oi.dispatched_qty, oi.dispatched_bulk_qty, oi.cancelled_qty, oi.fulfillment_mode, oi.parent_order_item_id,
+    `SELECT oi.id, oi.item_id, oi.name, COALESCE(NULLIF(oi.sku, ''), ii.sku) AS sku, ii.unit, oi.unit_price, oi.quantity, oi.released_qty, oi.dispatched_qty, oi.dispatched_bulk_qty, oi.cancelled_qty, oi.fulfillment_mode, oi.parent_order_item_id,
             ((SELECT COUNT(*) FROM job_order_units u WHERE u.order_item_id=oi.id AND u.status='reserved')+MAX(oi.dispatched_qty-oi.dispatched_bulk_qty,(SELECT COUNT(*) FROM job_order_units u WHERE u.order_item_id=oi.id AND u.status='sold'))) AS units,
             EXISTS (SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
               WHERE u.product_item_id = oi.item_id AND j.build_mode = CASE WHEN oi.fulfillment_mode = 'semi_built' THEN 'semi_built' ELSE 'assembled' END) AS serialized
-     FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.sort, oi.id`, id
+     FROM order_items oi LEFT JOIN inventory_items ii ON ii.id = oi.item_id WHERE oi.order_id = ? ORDER BY oi.sort, oi.id`, id
   );
   const units = queryAll(
     `SELECT u.id, u.identifier, u.status, u.product_item_id, u.order_item_id, j.product_name, l.name AS location_name,
@@ -224,6 +224,7 @@ router.post('/orders/:id/override-request', releaseGate, syncClass('merge'), (re
   if (!order) { res.status(404).json({ error: 'Sale order not found' }); return; }
   const { auth, state } = currentAuthorization(id);
   if (!auth || state !== 'valid') { res.status(409).json({ error: 'There is no valid release authorization to override — ask Sales to issue one.' }); return; }
+  if(auth.handoff_type==='internal'){res.status(409).json({error:'Internal handoffs require staff acknowledgment, not a token override.'});return;}
   const open = latestOverride(auth.id);
   if (open && (open.status === 'requested' || open.status === 'approved')) { res.json({ override: publicAuthorization(id).override }); return; }
   const { reason } = parseBody(releaseOverrideRequestSchema, req.body);
@@ -242,6 +243,7 @@ router.post('/orders/:id/override', supervisorGate, syncClass('claim', orderSite
   if (!order) { res.status(404).json({ error: 'Sale order not found' }); return; }
   const { auth, state } = currentAuthorization(id);
   if (!auth || state !== 'valid') { res.status(409).json({ error: 'There is no valid release authorization to override — ask Sales to issue one.' }); return; }
+  if(auth.handoff_type==='internal'){res.status(409).json({error:'Internal handoffs require staff acknowledgment, not a token override.'});return;}
   const { approve, reason } = parseBody(releaseOverrideDecisionSchema, req.body);
   const open = latestOverride(auth.id);
   if (!independentApproval(req,res,open?.requested_by ?? req.user!.id,'approve this release exception')) return;
@@ -272,7 +274,7 @@ router.get('/orders/:id/authorizations', requireAnyPermission(['orders.view', 'o
   const rows = queryAll<Record<string, unknown>>(
     `SELECT a.*, u.full_name AS issued_by_name, rv.full_name AS revoked_by_name FROM release_authorizations a
      LEFT JOIN users u ON u.id = a.issued_by LEFT JOIN users rv ON rv.id = a.revoked_by WHERE a.order_id = ? ORDER BY a.id DESC`, id
-  ).map((a) => ({ ...a, token: showToken ? a.token : String(a.token).split('-')[0] + '-••••',
+  ).map((a) => ({ ...a, token:a.handoff_type==='internal'?null:showToken?a.token:String(a.token).split('-')[0]+'-••••',
     id_reference: a.id_last4 ? '••' + a.id_last4 : null }));
   res.json({ current: publicAuthorization(id), history: rows, required: authorizationRequired() });
 });
@@ -283,18 +285,21 @@ router.post('/orders/:id/authorizations', salesGate, syncClass('claim', orderSit
   if (orderOutstanding(id)<=1e-9) { res.status(409).json({ error:'No unshipped remainder remains on this order.' }); return; }
   const input = parseBody(releaseAuthorizationSchema, req.body);
   const last4 = input.id_reference ? input.id_reference.replace(/[^0-9A-Za-z]/g, '').slice(-4) || null : null;
-  const token = newToken(input.mode);
+  const receiver=input.handoff_type==='internal'?queryOne<{id:number;full_name:string}>('SELECT id,full_name FROM users WHERE id=? AND active=1',input.receiver_user_id):null;
+  if(input.handoff_type==='internal'&&!receiver){res.status(400).json({error:'Choose an active staff receiver.'});return;}
+  const recipient=receiver?.full_name||input.recipient_name;
+  const token = input.handoff_type==='internal'?'':newToken(input.mode);
   run(
     `UPDATE release_authorizations SET revoked_at = datetime('now'), revoked_by = ?, revoke_reason = 'Replaced by a new authorization'
      WHERE order_id = ? AND revoked_at IS NULL AND used_slip_id IS NULL`, req.user!.id, id
   );
   run(
-    `INSERT INTO release_authorizations (order_id, mode, recipient_name, id_last4, token, valid_until, handoff_area, partial_allowed, notes, issued_by)
-     VALUES (?, ?, ?, ?, ?, datetime('now', ?), ?, ?, ?, ?)`,
-    id, input.mode, input.recipient_name, last4, token, `+${Math.round(input.valid_hours * 60)} minutes`, input.handoff_area ?? null,
-    input.partial_allowed ? 1 : 0, input.notes ?? null, req.user!.id
+    `INSERT INTO release_authorizations (order_id, mode, recipient_name, id_last4, token, valid_until, handoff_area, partial_allowed, notes, issued_by, handoff_type, receiver_user_id)
+     VALUES (?, ?, ?, ?, ?, datetime('now', ?), ?, ?, ?, ?, ?, ?)`,
+    id, input.mode, recipient, input.handoff_type==='internal'?null:last4, token, `+${Math.round(input.valid_hours * 60)} minutes`, input.handoff_area ?? null,
+    input.partial_allowed ? 1 : 0, input.notes ?? null, req.user!.id,input.handoff_type,receiver?.id??null
   );
-  res.status(201).json({ token, authorization: publicAuthorization(id) });
+  res.status(201).json({ token:token||null, authorization: publicAuthorization(id) });
 });
 
 router.post('/orders/:id/authorizations/revoke', salesGate, syncClass('claim', orderSite), (req, res) => {
@@ -357,13 +362,15 @@ router.put('/policy', requirePermission('orders.configure'), syncClass('claim'),
 
 const SLIP_SELECT = `
   SELECT rs.*, o.number AS order_number, o.customer_name, o.customer_contact, o.status AS order_status,
-         u.full_name AS released_by_name,
+         u.full_name AS released_by_name,d.handoff_type,d.receiver_user_id,d.signature_attachment_id,d.acknowledged,d.recipient_name AS approved_receiver_name,
          (SELECT COUNT(*) FROM attachments a WHERE a.kind = 'release' AND a.ref_id = rs.id) AS photo_count,
          (SELECT t.decision_note FROM release_token_overrides t WHERE t.used_slip_id = rs.id) AS override_reason,
          (SELECT su.full_name FROM release_token_overrides t JOIN users su ON su.id = t.decided_by WHERE t.used_slip_id = rs.id) AS override_by_name
   FROM release_slips rs
   JOIN orders o ON o.id = rs.order_id
-  LEFT JOIN users u ON u.id = rs.released_by`;
+  LEFT JOIN users u ON u.id = rs.released_by LEFT JOIN release_slip_details d ON d.slip_id=rs.id`;
+
+router.get('/receivers',salesGate,(_req,res)=>{res.json(queryAll('SELECT id,full_name FROM users WHERE active=1 ORDER BY full_name,id'));});
 
 // GET /api/release-slips?q= — issued slips, newest first
 router.get('/', viewGate, (req, res) => {
