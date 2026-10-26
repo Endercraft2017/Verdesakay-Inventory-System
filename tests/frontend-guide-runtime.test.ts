@@ -12,6 +12,16 @@ async function boot() {
   w.eval(['ui.js','guide-data.js','guide-search.js','guide-tour.js','guide-instructions.js','guide-center.js','modules/manufacturing/sop.js'].map(s=>fs.readFileSync(path.join(import.meta.dirname,'../public/js',s),'utf8')).join('\n;\n')+'\nwindow.__UI=UI;');await flush();
   return {dom,w,routes,navigations,setUser:(id:number)=>userId=id};
 }
+
+it('reveals nested closed sections without clicking actions and drops hidden or removed highlights',async()=>{
+ const {dom,w,navigations}=await boot(),view=w.document.querySelector('#view');let actions=0;
+ view.innerHTML='<details id="outer"><summary>Tools</summary><details id="inner"><summary>Orders</summary><button id="release">Release order</button></details></details>';
+ const target=view.querySelector('#release');target.onclick=()=>actions++;
+ w.GuideTour.start({id:'nested-section',title:'Work',steps:[{title:'Release orders',target,spot:'#release',body:'Review this action.'}]});
+ expect(view.querySelector('#outer').open).toBe(true);expect(view.querySelector('#inner').open).toBe(true);expect(w.document.querySelector('.guide-focus-ring').hidden).toBe(false);expect(actions).toBe(0);expect(navigations).toEqual([]);
+ target.hidden=true;await flush();expect(w.document.querySelector('.guide-focus-ring').hidden).toBe(true);target.hidden=false;await flush();expect(w.document.querySelector('.guide-focus-ring').hidden).toBe(false);
+ target.remove();await flush();expect(w.document.querySelector('.guide-focus-ring').hidden).toBe(true);expect(actions).toBe(0);dom.window.close();
+});
 it('filters catalog by access and supports search, empty results, recovery and module filters',async()=>{
   const {dom,w,routes}=await boot();const catalog=w.GuideCenter.catalog();expect(catalog.some((p:any)=>p.title==='Forbidden')).toBe(false);expect(catalog.some((p:any)=>p.id==='production')).toBe(false);expect(catalog.some((p:any)=>p.id==='file-request')).toBe(true);
   const feature=catalog.find((p:any)=>p.kind==='feature'&&p.route==='hr-requests');expect(feature.id).toContain('\"tab\"');

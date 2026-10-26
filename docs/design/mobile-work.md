@@ -303,6 +303,34 @@ completion/error states. Details and actions continue to read/check live state.
 Measure cold and warm readiness independently from network response completion;
 label injected-delay browser timings accurately and retain physical-device limits.
 
+
+## Guide visibility, card rails and tab canvas — 2026-10-25
+
+The shared guide may open ancestor native details sections to reveal a permitted
+control. It must never click a workflow action or reveal a conditional hidden
+field. A nonzero bounding box is insufficient: closed details descendants can
+have geometry without being painted. Check connection, explicit/CSS visibility,
+paint visibility when supported, and viewport intersection before drawing a ring.
+Hidden or removed targets lose the ring immediately. Center newly entered targets
+without animated scrolling; on narrow viewports keep the coach scrollable above
+or below the target so the coach and dock do not hide the actual control. Keep
+normal modeless navigation and explicit business actions.
+
+Shared RoleUI cards own their three-column layout and zero outer padding through
+selectors more specific than the later role-kit defaults. Do not rely on equal
+specificity rules in an earlier stylesheet. The arrow rail spans the full card
+height and reaches its right inner border; shared cards and Sales order cards use
+--m-ux-rail-width (52px). Unknown workflow status stays neutral. Customer and
+Recent sales collections use rk-list's existing 12px gap.
+
+The five primary tab overview roots share the shell's --m-ux-page-max (560px)
+canvas and its normal gutters. Avoid nested narrower maximum widths or doubled
+horizontal padding on Profile. This is consistent usable content width, not only
+matching outer wrappers. The floating dock keeps its separate stable width;
+workflow capture forms and active message threads retain their specific layouts.
+Verify all five tab content bounds at 320, 390, 768 and 1280px. Tests exercise
+ordinary UI navigation, current real components and disposable captured records;
+they do not establish physical-device or first-time employee usability.
 ## SO picking proposal — 2026-10-26 (review, not rolled out)
 
 Accepted, authorized orders can open directly in the picking workspace. Keep
