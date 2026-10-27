@@ -1354,3 +1354,8 @@ re-tapping Work refreshes effective access, and custom clerk grants/revocations
 were verified through the actual sandbox desktop editor and candidate mobile UI.
 
 The template editor Layers panel supports scoped drag/drop and Alt+Arrow ordering, inline double-click/F2 naming, canvas selection/highlighting, and a keyboard-accessible per-layer action menu. Duplicates either retain exact coordinates or receive a 12 px offset; copies stay in the original parent. Layer edits use discrete editor history transactions and canonical HTML persistence. Locked layers block reordering/deletion; cross-page and cross-group drops are refused. Tests: doc-editor-studio and the Layers scenario in test:editor:ux.
+
+
+## Public marketing qualification update October 2026
+
+Public readiness review → existing website inquiry or static AFK3 fallback → owner qualification → demonstrated task → separately agreed scope and payment. Campaign/workflow context uses the existing message field. See [marketing-acquisition.md](marketing-acquisition.md); acknowledgements, demos and collected money remain distinct.

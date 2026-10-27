@@ -1498,3 +1498,8 @@ Actual sandbox desktop grants/removals and candidate mobile desks passed five
 Playwright checks; the audit-only accounts were cleared and disabled afterward.
 
 The template editor Layers panel supports scoped drag/drop and Alt+Arrow ordering, inline double-click/F2 naming, canvas selection/highlighting, and a keyboard-accessible per-layer action menu. Duplicates either retain exact coordinates or receive a 12 px offset; copies stay in the original parent. Layer edits use discrete editor history transactions and canonical HTML persistence. Locked layers block reordering/deletion; cross-page and cross-group drops are refused. Tests: doc-editor-studio and the Layers scenario in test:editor:ux.
+
+
+## Public marketing and acquisition update October 2026
+
+See [marketing-acquisition.md](marketing-acquisition.md) for the public website's scoped HR positioning, readiness table, source context, existing inquiry connection and validation limits. This is marketing preparation, not new live workflow acceptance.

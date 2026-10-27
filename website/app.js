@@ -1,14 +1,17 @@
 (function () {
   'use strict';
   var slug = function (v) { return v.trim().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); };
-  var LABELS = { inventory: 'Inventory', manufacturing: 'Manufacturing', purchasing: 'Purchasing', hr: 'HR & Payroll', accounting: 'Accounting', ai: 'AI Assistant', mobile: 'Mobile app', email: 'Email', quickbooks: 'QuickBooks' };
+  var LABELS = { inventory: 'Inventory', manufacturing: 'Manufacturing', purchasing: 'Purchasing', hr: 'HR & Payroll', accounting: 'Accounting (WIP — review required)', ai: 'AI Assistant', mobile: 'Mobile app', email: 'Email', quickbooks: 'QuickBooks' };
   var signupsOpen = false;
   document.querySelectorAll('[data-open]').forEach(function (b) { b.addEventListener('click', function () {
     // Self-service sign-up is off unless the owner opens it; every "sign up" path leads to Talk to us.
     var which = b.dataset.open === 'signup' && !signupsOpen ? 'contact' : b.dataset.open;
-    document.getElementById(which + '-dialog').showModal();
+    var dialog = document.getElementById(which + '-dialog');
+    dialog._opener = b;
+    dialog.showModal();
   }); });
   document.querySelectorAll('.close').forEach(function (b) { b.addEventListener('click', function () { b.closest('dialog').close(); }); });
+  document.querySelectorAll('dialog').forEach(function (d) { d.addEventListener('close', function () { if (d._opener && d._opener.isConnected) d._opener.focus(); }); });
   var loginForm = document.getElementById('login-form');
   var loginChallenge = null;
   var loginCompany = '';
@@ -95,7 +98,7 @@
   fetch('/site/config').then(function (r) { if (!r.ok) throw new Error(); return r.json(); }).then(function (c) {
     var how = [c.payment_methods && c.payment_methods.gcash ? 'GCash' : null, c.payment_methods && c.payment_methods.bank ? 'bank transfer' : null].filter(Boolean).join(' or ') || 'GCash or bank transfer';
     document.getElementById('signup-info').textContent = c.signups_open
-      ? 'Create your workspace, then pay the first month by ' + how + ' from inside it. It opens as soon as we confirm your payment. Employee records are unlimited.'
+      ? 'Create your workspace, then pay the first month by ' + how + ' from inside it. It opens as soon as we confirm your payment. Seats and employee record limits are confirmed in your written scope.'
       : 'Self-service registration is not open yet. New subscriptions are currently set up by the platform owner.';
     pricing = c.pricing || null;
     signupsOpen = !!c.signups_open;
@@ -112,8 +115,8 @@
     moduleDeps = c.module_deps;
     c.modules.forEach(function (m) {
       var label = document.createElement('label'), check = document.createElement('input');
-      check.type = 'checkbox'; check.checked = true; moduleChecks[m] = check;
-      check.addEventListener('change', function () { syncModuleDeps(); showEstimate(); }); label.append(check, document.createTextNode(m));
+      check.type = 'checkbox'; check.value = m; check.checked = false; moduleChecks[m] = check;
+      check.addEventListener('change', function () { syncModuleDeps(); showEstimate(); }); label.append(check, document.createTextNode(LABELS[m] || m));
       document.getElementById('signup-modules').appendChild(label);
     });
     syncModuleDeps();
@@ -150,6 +153,9 @@
     }
     box.classList.toggle('hidden', !box.children.length);
   }
+  ['c-message','c-workflow'].forEach(function (id) { document.getElementById(id).addEventListener('input', function () {
+    document.getElementById('contact-length').textContent = 'Message: ' + document.getElementById('c-message').value.length + ' / 1450 characters. Workflow: ' + document.getElementById('c-workflow').value.length + ' / 220.';
+  }); });
   document.getElementById('contact-form').addEventListener('submit', async function (e) {
     e.preventDefault();
     var form = this, error = form.querySelector('.error'), button = document.getElementById('contact-submit');
@@ -157,12 +163,21 @@
     var get = function (id) { return document.getElementById(id).value.trim(); };
     if (!get('c-name') || !get('c-company')) { error.textContent = 'Enter your name and company.'; return; }
     if (!document.getElementById('c-email').checkValidity() || !get('c-email')) { error.textContent = 'Enter a valid email address.'; return; }
+    var buyerMessage = document.getElementById('c-message').value;
+    var workflow = document.getElementById('c-workflow').value;
+    if (buyerMessage.length > 1450 || workflow.length > 220) { error.textContent = 'Keep the message within 1450 characters and the workflow within 220. Your text has been retained.'; return; }
+    var workflowBlock = workflow ? '\n\nWorkflow to review: ' + workflow : '';
+    var sourceBlock = '';
+    try { if (window.AFKLead) sourceBlock = '\n\nCampaign source: ' + window.AFKLead.serialize('otom'); }
+    catch (ex) { error.textContent = ex.message; return; }
+    if (workflowBlock.length > 250 || sourceBlock.length > 300 || (buyerMessage + workflowBlock + sourceBlock).length > 2000) { error.textContent = 'The combined message is too long. Please shorten it; your text has been retained.'; return; }
+    var message = buyerMessage + workflowBlock + sourceBlock;
     button.disabled = true; button.textContent = 'Sending…';
     try {
       var modules = Array.prototype.slice.call(document.querySelectorAll('#contact-modules input:checked')).map(function (i) { return i.value; });
       var r = await fetch('/site/inquiry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         name: get('c-name'), company: get('c-company'), email: get('c-email'), phone: get('c-phone'),
-        employees: document.getElementById('c-employees').value, modules: modules, message: get('c-message'), website: get('c-website') }) });
+        employees: document.getElementById('c-employees').value, modules: modules, message: message, website: get('c-website') }) });
       var data = await r.json().catch(function () { return {}; });
       if (!r.ok) throw new Error(data.error || 'Your message could not be sent. Please try again.');
       form.classList.add('hidden');
@@ -173,3 +188,4 @@
   if (path === '/login') document.getElementById('login-dialog').showModal();
   if (path === '/signup' || path === '/contact') document.getElementById(path === '/signup' && signupsOpen ? 'signup-dialog' : 'contact-dialog').showModal();
 })();
+
