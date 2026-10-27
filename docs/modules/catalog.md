@@ -1672,3 +1672,30 @@ style cards expose their full visible names. The mandatory audit harness re-auth
 password replacement and exercises real cookie login at the current desktop entry URL.
 Progress JSON retains failing scan nodes during execution. See
 [verification](../audits/evidence/payroll-copy-verification.json).
+
+## Public marketing and inquiry intent follow-up 27 October 2026
+
+`website/index.html`, `style.css` and the vanilla enhancement `marketing.js` keep the
+cream/green OTOM identity and explain an owner-guided evaluation of a product in
+active development. Genuine screenshots render the original attendance/mobile
+interface with fictional local data; they do not establish live server outcomes,
+statutory correctness, salary payment or provider integrations. User-selected
+proof views use native Web Animations only when reduced motion is not requested;
+all screens and copy remain available without JavaScript.
+
+The existing platform inquiry capability owns the sales handoff. Marketing adds
+four whitelisted intents, bounded untrusted page-source/referral claims inside the
+existing message field, and an explicit no-company individual-partner category.
+No schema, auth, account creation, commission accrual or top-level payload field
+is added. The contact adapter freezes the exact serialized body and UUID at first
+dispatch, locks fields during uncertainty, retries identical bytes and accepts
+only HTTP 201 with `ok: true`. An explicit new inquiry is available after that
+acknowledgement. Closing a dialog or changing a CTA cannot rewrite an unresolved
+request. Inquiry acknowledgement is not an email-delivery or booked-demo claim.
+
+Verification is isolated DOM/request-recorder coverage under the acquisition
+review's `qa_marketing/`; backend persistence, real inbox delivery, hosted asset
+mapping, performance and actual buyer comprehension require separate acceptance.
+No live sandbox workflow was completed in this review.
+
+Website marketing verification command: `node scripts/verify-website-marketing.mjs` (isolated fictional fetch recorder; outputs under ignored `work/website-marketing`). This is not a live backend or inbox acceptance test.
