@@ -40,6 +40,7 @@ function setup() {
   Object.assign(process.env, { SENDFOX_API_KEY: 'fixture-token', INQUIRY_FROM: 'OTOM <notifications@example.test>', INQUIRY_TO: 'contact@example.test', NODE_ENV: 'production', APP_SECRET: 'disposable-fixture-secret' });
 }
 function clean() { globalThis.__mailFixtureDb.close(); console.info = originalInfo; console.error = originalError; }
+function diagnostic() { return JSON.parse(runtimeLogs[0].replace('[platform-mail] inquiry notification check ', '')); }
 
 test('configured SendFox delivers one inquiry alert while stored SMTP stays untouched', async () => {
   setup();
@@ -58,7 +59,8 @@ test('configured SendFox delivers one inquiry alert while stored SMTP stays unto
     assert.equal(globalThis.__smtpFixtureCalls.length, 0);
     assert.equal(mail.getPlatformMail().transport, 'smtp');
     assert.equal(mail.platformMailLog()[0].status, 'sent');
-    assert.deepEqual(runtimeLogs, ['[platform-mail] inquiry queued via SendFox']);
+    assert.deepEqual(diagnostic(), { enabled: true, sendfoxConfigured: true, testMode: false });
+    assert.equal(runtimeLogs.at(-1), '[platform-mail] inquiry queued via SendFox');
   } finally { clean(); }
 });
 
@@ -69,6 +71,8 @@ test('the inquiry alert switch still suppresses SendFox', async () => {
     globalThis.fetch = async () => { throw new Error('must not request'); };
     await mail.notifyOwner('inquiry', 'Suppressed', ['Fixture']);
     assert.equal(mail.platformMailLog().length, 0);
+    assert.deepEqual(diagnostic(), { enabled: false, sendfoxConfigured: true, testMode: false });
+    assert.equal(runtimeLogs.at(-1), '[platform-mail] inquiry notification skipped: alert disabled');
   } finally { clean(); }
 });
 
@@ -83,9 +87,12 @@ test('a failed SendFox attempt is logged once and does not fall back to SMTP', a
     assert.equal(logs[0].status, 'failed');
     assert.equal(logs[0].error, 'SendFox rejected the inquiry email (HTTP 503).');
     assert.equal(globalThis.__smtpFixtureCalls.length, 0);
-    assert.deepEqual(runtimeLogs, ['[platform-mail] inquiry notification failed: SendFox rejected the inquiry email (HTTP 503).']);
+    assert.deepEqual(diagnostic(), { enabled: true, sendfoxConfigured: true, testMode: false });
+    assert.equal(runtimeLogs.at(-1), '[platform-mail] inquiry notification failed: SendFox rejected the inquiry email (HTTP 503).');
     assert.ok(!runtimeLogs.join(' ').includes('do not log this body'));
     assert.ok(!runtimeLogs.join(' ').includes('fixture-token'));
+    assert.ok(!runtimeLogs.join(' ').includes('contact@example.test'));
+    assert.ok(!runtimeLogs.join(' ').includes('Failure fixture'));
   } finally { clean(); }
 });
 
@@ -124,6 +131,22 @@ test('NODE_ENV=test retains the existing outbox contract and makes no request', 
     assert.equal(mail._testOutbox.length, before + 1);
     assert.equal(mail._testOutbox.at(-1).replyTo, 'visitor@example.test');
     assert.equal(mail.platformMailLog()[0].status, 'sent');
+    assert.deepEqual(diagnostic(), { enabled: true, sendfoxConfigured: true, testMode: true });
+    assert.equal(runtimeLogs.at(-1), '[platform-mail] inquiry notification captured in test outbox');
+    assert.ok(!runtimeLogs.join(' ').includes('queued via SendFox'));
+  } finally { clean(); }
+});
+
+test('missing SendFox configuration plus stored email off produces a safe skip reason', async () => {
+  setup();
+  try {
+    delete process.env.SENDFOX_API_KEY;
+    globalThis.fetch = async () => { throw new Error('must not request'); };
+    await mail.notifyOwner('inquiry', 'Private fixture subject', ['Private fixture body']);
+    assert.deepEqual(diagnostic(), { enabled: true, sendfoxConfigured: false, testMode: false });
+    assert.equal(runtimeLogs.at(-1), '[platform-mail] inquiry notification skipped: no SendFox configuration and stored email off');
+    assert.equal(mail.platformMailLog().length, 0);
+    assert.ok(!runtimeLogs.join(' ').includes('Private fixture'));
   } finally { clean(); }
 });
 

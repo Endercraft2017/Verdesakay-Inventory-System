@@ -169,22 +169,35 @@ export async function notifyOwner(kind: AlertKind, subject: string, lines: strin
   try {
     const s = getPlatformMail();
     const on = kind === 'inquiry' ? s.alert_inquiry : kind === 'payment' ? s.alert_payment : s.alert_signup;
-    if (!on) return;
+    const sendfoxConfigured = kind === 'inquiry' && inquirySendFoxEnabled();
+    const testMode = process.env.NODE_ENV === 'test';
+    if (kind === 'inquiry') console.info('[platform-mail] inquiry notification check', JSON.stringify({ enabled: Boolean(on), sendfoxConfigured, testMode }));
+    if (!on) {
+      if (kind === 'inquiry') console.info('[platform-mail] inquiry notification skipped: alert disabled');
+      return;
+    }
     const text = `${lines.filter(Boolean).join('\n')}\n\nOpen the owner console: ${consoleUrl()}\n`;
     // Explicit environment configuration selects SendFox only for website inquiries.
     // The existing alert switch remains authoritative; other alert transports/settings are untouched.
-    if (kind === 'inquiry' && inquirySendFoxEnabled()) {
-      const result = await sendSendFoxInquiry({ subject, text, replyTo: options.replyTo }, { dryRun: process.env.NODE_ENV === 'test' });
-      if (process.env.NODE_ENV !== 'test') {
+    if (kind === 'inquiry' && sendfoxConfigured) {
+      const result = await sendSendFoxInquiry({ subject, text, replyTo: options.replyTo }, { dryRun: testMode });
+      if (!testMode) {
         if (result.ok) console.info('[platform-mail] inquiry queued via SendFox');
         else console.error('[platform-mail] inquiry notification failed:', result.error);
+      } else {
+        console.info(result.ok ? '[platform-mail] inquiry notification captured in test outbox' : '[platform-mail] inquiry notification skipped: invalid test-mode configuration');
       }
-      if (result.ok && process.env.NODE_ENV === 'test') _testOutbox.push({ to: result.to, subject, text, replyTo: options.replyTo });
+      if (result.ok && testMode) _testOutbox.push({ to: result.to, subject, text, replyTo: options.replyTo });
       db().prepare('INSERT INTO platform_mail_log (to_addr, subject, kind, status, error) VALUES (?, ?, ?, ?, ?)')
         .run(result.to.join(', ') || '(none)', subject, kind, result.ok ? 'sent' : 'failed', result.error ?? null);
       return; // Never retry through SMTP/Brevo after an accepted or uncertain SendFox request.
     }
-    if (s.transport === 'off' || !s.alert_to.trim()) return;
+    if (s.transport === 'off' || !s.alert_to.trim()) {
+      if (kind === 'inquiry') console.info(s.transport === 'off'
+        ? '[platform-mail] inquiry notification skipped: no SendFox configuration and stored email off'
+        : '[platform-mail] inquiry notification skipped: no SendFox configuration and stored recipient missing');
+      return;
+    }
     await sendPlatformMail({
       to: s.alert_to.split(','), subject, kind,
       text,

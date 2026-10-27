@@ -23,7 +23,7 @@ The public route still persists the inquiry before firing its asynchronous owner
 
 The existing private mail log's `sent` status means the provider accepted the request, consistent with its existing API transports. For SendFox this requires an explicit queued status and nonempty message ID. It does not establish inbox delivery.
 
-Runtime logs report only `inquiry queued via SendFox` or the fixed generic/HTTP-status failure reason. They omit recipients, subjects, message bodies, provider response bodies, tokens and message IDs.
+Runtime inquiry logs report the Boolean fields `enabled`, `sendfoxConfigured` and `testMode` before the transport decision, plus a fixed skip, queued or generic/HTTP-status failure reason. The diagnostic also runs in test mode so a live service accidentally using test mode can be identified. Test mode truthfully reports capture in the test outbox, never a provider queue. Logs omit recipients, subjects, message bodies, provider response bodies, tokens and message IDs.
 
 ## Verification
 
@@ -31,4 +31,4 @@ Runtime logs report only `inquiry queued via SendFox` or the fixed generic/HTTP-
 
 The optional test root supplies the app's existing esbuild and secrets helper when running this partial review checkout. A normal full checkout resolves both locally.
 
-Fourteen focused tests pass: eight provider contract/privacy/validation/dry-run cases and six real platform-mail/SQLite cases. Tests cover owner versus visitor addresses, Reply-To, escaped HTML, queued-ID acceptance, rejection without body logging, bounded payloads, empty/invalid values, network errors without retry, the inquiry switch, no SMTP fallback, preserved payment transport, preserved inquiry SMTP when no SendFox key exists, and the existing test outbox contract. SMTP and network transport fixtures prevent all external writes. No live email was sent by this implementation task. Live delivery verification belongs to the release test.
+Fifteen focused tests pass: eight provider contract/privacy/validation/dry-run cases and seven real platform-mail/SQLite cases. Tests cover owner versus visitor addresses, Reply-To, escaped HTML, queued-ID acceptance, rejection without body logging, bounded payloads, empty/invalid values, network errors without retry, the inquiry switch, no SMTP fallback, preserved payment transport, preserved inquiry SMTP when no SendFox key exists, the existing test outbox contract, and safe configuration/skip diagnostics. SMTP and network transport fixtures prevent all external writes. No live email was sent by this implementation task. Live delivery verification belongs to the release test.
