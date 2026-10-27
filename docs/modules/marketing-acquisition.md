@@ -23,8 +23,8 @@ Run with `node --test tests/website-acquisition.node.mjs` after installing exist
 dependencies. These are not browser layout, payroll or live production acceptance tests.
 Real screenshots, hosted mobile/keyboard/reduced-motion checks, owner queue receipt,
 external mail and buyer comprehension are still release gates. Authenticated read-only
-inspection succeeded on 27 October 2026; reusable image files have not yet been returned
-by the browser connector, so no genuine product capture is embedded in this draft.
+inspection succeeded on 27 October 2026. Genuine local-source product captures now
+provide the manual screen gallery described below.
 
 Copy refinement: the homepage now describes the buyer’s HR demo and pilot checks in plain language instead of exposing internal source-inspection terminology. End-to-end validation remains explicitly pending; the demo agenda remains labeled as an agenda, not screenshots. No product readiness status or API contract changes.
 
@@ -67,13 +67,22 @@ control works or that a viewport is responsive.
 | Sales | Pipeline board loaded with two synthetic orders in CSR review. | No order-to-release or stock-reservation workflow completed. |
 | Mobile web | `/sandbox/m` home, work queues and bottom navigation loaded. | Administrator account lacks a linked employee record; employee time clock/payslip tasks and physical-device behavior remain unverified. |
 
-The returned result and run metadata contain no downloadable screenshot or recording
-URLs despite capture being requested. No image has been downloaded, visually reviewed,
-or added to the marketing site. Screenshot export is the remaining asset blocker,
-separate from authenticated access, which now works. Do not substitute fabricated app
-screens or publish credentials, browser state, tokens or private run access links.
+The live-browser connector returned no downloadable image files. The owner's requested
+local source rebuild resolved this export blocker, as described below. Do not publish
+credentials, browser state, tokens or private run access links.
 
 Historical source evidence is also available in `docs/reviews/hr-sandbox-acceptance.md`
 (10 October 2026): it records earlier API/browser checks of synthetic HR workflows and
 states their limits. Those are prior repository results, not rerun by this marketing
 inspection. They do not replace a current guided buyer demonstration or pilot checks.
+
+## Local source screenshots and manual gallery
+
+The real application was reconstructed from deployed source `5b742ca1930f1a7061afb27d1ff61a4837c16419`, verifying retrieved files against their Git blob hashes. The existing disposable editor server runs the actual `createApp()` handlers with fresh temporary SQLite databases and upload/tenant directories. Production configuration, live credentials and live data were absent.
+
+Eleven real API checks covered four fictional employees, a five-day cutoff with one missing time-out, four unpaid draft payslips, employee linkage, a three-component BOM, nonnegative and exact stock after kit release, production progress of two of four units, an open sales order, and a normal employee's access to only their own draft payslip. No stock overrides, payment marks or production calls were used.
+
+Playwright captured the actual source-rendered desktop app at 1440×960 and a normal employee mobile view at a 390×844 viewport / 780×1688 pixels. All nine captured screens loaded without page exceptions, HTTP errors or external requests. Six WebP files are format conversions of these screenshots, without UI repainting: attendance, draft payroll, warehouse inventory, production job detail, sales pipeline and employee mobile home. The kiosk's unavailable physical camera view is excluded from the gallery.
+
+`Inside OTOM` keeps HR first and presents Warehouse, Production and Sales as secondary manual choices. Each selection updates the real static screenshot, caption, full-image link and inquiry-topic prefill while preserving visitor edits. Pointer selection uses a 220ms opacity transition; keyboard and reduced-motion selection are instant. There is no autoplay. The first image and direct image links remain without JavaScript; preload failures retain the previous accurate image and caption. Images are labeled `Local demonstration · synthetic data` and do not establish production payroll correctness, real camera behavior or live operational readiness.
+
