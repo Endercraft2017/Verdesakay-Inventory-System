@@ -19,3 +19,62 @@ textarea{resize:vertical}select:focus-visible,textarea:focus-visible{outline:3px
 /* Keep small scope labels and contact guidance readable on both pale surfaces. */
 .caption, .features article > span, .subscription p { color: #50645c; }
 .subscription .static-contact { color: #183c35; }
+
+/* A demo-planning surface, deliberately distinct from the authenticated product. */
+header { border-bottom: 1px solid #dce3d5; }
+.hero { padding: 64px 0 76px; gap: 54px; }
+.hero h1 { font-weight: 800; max-width: 600px; }
+.hero .lead { font-size: 19px; line-height: 1.7; }
+.demo-planner { background: #fff; border-color: #d3ddcc; box-shadow: 0 20px 60px #1939270a; }
+.demo-planner h2 { margin: 22px 0 10px; font-size: 30px; }
+.planner-intro { font-size: 13px; color: #50645c; margin: 0 0 22px; }
+.agenda-badge { background: #e9efdf; color: #31533c; border-color: #d0ddc5; }
+.review-controls { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; padding: 5px; border-radius: 12px; background: #edf1e7; }
+.review-controls button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 3px; background: transparent; color: #345346; font-size: 12px; border-radius: 8px; min-height: 58px; }
+.review-controls button span { font-size: 9px; letter-spacing: .12em; opacity: .8; }
+.review-controls button[aria-pressed=true] { background: #1d5946; color: #fff; box-shadow: 0 3px 8px #19392718; }
+.review-controls button:hover { opacity: 1; }
+.review-panel[hidden], .review-controls[hidden] { display: none !important; }
+.review-panels { min-height: 258px; }
+.review-panel { padding: 24px 0 12px; }
+.review-visual { display: flex; align-items: center; gap: 13px; color: #49664f; font-size: 10px; font-weight: 750; letter-spacing: .12em; }
+.review-visual svg { width: 43px; height: 43px; stroke: #3c765b; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; padding: 3px; border-radius: 10px; background: #edf3e7; }
+.review-panel h3 { font-size: 23px; letter-spacing: -.6px; margin: 14px 0 9px; }
+.review-panel p { font-size: 14px; line-height: 1.65; color: #50645c; margin: 0 0 12px; }
+.review-panel ul { margin: 0; padding-left: 17px; display: grid; gap: 5px; font-size: 12px; line-height: 1.5; color: #3f5a4b; }
+.review-panel li::marker { color: #52815e; }
+.planner-cta { display: flex; width: 100%; justify-content: space-between; align-items: center; min-height: 48px; margin-top: 4px; }
+.demo-planner .agenda-note { border-top: 1px solid #e3e8dd; padding-top: 15px; margin-top: 17px; font-size: 11px; }
+.optional-scope { border: 1px solid #cbd6c2; border-radius: 14px; margin: 28px 0 72px; background: #edf1e7; }
+.optional-scope > summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; padding: 22px 25px; min-height: 66px; font-size: 16px; font-weight: 700; list-style: none; }
+.optional-scope > summary::-webkit-details-marker { display: none; }
+.scope-toggle { font-size: 24px; line-height: 1; font-weight: 400; }
+.optional-scope[open] .scope-toggle { transform: rotate(45deg); }
+.optional-scope .features { margin: 0; padding: 0 15px 15px; gap: 12px; }
+.fit-grid article { padding-top: 18px; border-top: 2px solid #c8d6bd; }
+@media(max-width:760px) {
+  .hero { padding: 38px 0 48px; gap: 32px; }
+  .hero h1 { font-size: clamp(42px,9.7vw,60px); }
+  .hero .lead { font-size: 17px; }
+  .demo-planner { padding: 23px; }
+  .demo-planner h2 { font-size: 29px; }
+  .optional-scope > summary { font-size: 14px; padding: 18px; }
+  .optional-scope .features { grid-template-columns: 1fr; }
+  .readiness-scroll { border: 0; overflow: visible; }
+  .readiness { min-width: 0; }
+  .readiness thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .readiness tbody { display: grid; gap: 10px; }
+  .readiness tbody tr { display: grid; grid-template-columns: 1fr auto; background: #fff; border: 1px solid #d2ddca; border-radius: 12px; padding: 17px; }
+  .readiness tbody th, .readiness tbody td { border: 0; padding: 0; }
+  .readiness tbody th { align-self: center; }
+  .readiness tbody td:last-child { grid-column: 1/-1; padding-top: 11px; font-size: 13px; line-height: 1.6; }
+  .readiness-note { margin-bottom: 48px; }
+}
+@media(max-width:480px) {
+  header { flex-wrap: nowrap; padding: 18px 6%; gap: 10px; }
+  header .brand { font-size: 23px; }
+  header .brand span { font-size: 8px; letter-spacing: 1px; white-space: nowrap; }
+  header nav { gap: 7px; justify-content: flex-end; }
+  header nav a { display: none; }
+  header nav button { font-size: 11px; padding: 11px 10px; }
+}
