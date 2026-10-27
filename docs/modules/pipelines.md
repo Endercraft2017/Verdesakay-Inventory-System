@@ -1624,3 +1624,23 @@ ribbon state labels; results and incomplete checks remain evidence, not a confor
 
 Staff record search → JSON-valid guarded employee-name extraction → safe parsed review rows.
 Corrupt history remains findable by record number; payroll copy validation still holds it.
+
+## Public evaluation and referral inquiry follow-up 27 October 2026
+
+Bounded intent link or contact CTA → visitor chooses OTOM walkthrough, custom
+workflow, managed operations or referral partnership → applicable fields and
+explicit individual-without-company option → validate → bounded context composed
+into the existing message → freeze exact JSON body plus UUID → dispatch the
+existing `/site/inquiry` contract → exact 201/`ok: true` acknowledgement → operator
+review and qualification. Source/referral query tokens are untrusted claims;
+manual accepted attribution and commercial terms remain outside this pipeline.
+
+Timeout, malformed acknowledgement, HTTP failure or network failure retains the
+same-page immutable body/key and locked details for an identical retry. No
+silent reset or new inquiry is offered while confirmation is unresolved. After
+confirmed acknowledgement the visitor may explicitly start a new inquiry. Login,
+MFA, signup gate, owner contact configuration, honeypot and server rate limits
+retain their existing paths. A controlled recorder verifies the client boundary;
+actual owner queue/email receipt and deployed end-to-end behavior remain pending.
+
+Website marketing verification command: `node scripts/verify-website-marketing.mjs` (isolated fictional fetch recorder; outputs under ignored `work/website-marketing`). This is not a live backend or inbox acceptance test.

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   var slug = function (v) { return v.trim().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); };
-  var LABELS = { inventory: 'Inventory', manufacturing: 'Manufacturing', purchasing: 'Purchasing', hr: 'HR & Payroll', accounting: 'Accounting', ai: 'AI Assistant', mobile: 'Mobile app', email: 'Email', quickbooks: 'QuickBooks' };
+  var LABELS = { inventory: 'Inventory', manufacturing: 'Manufacturing', purchasing: 'Purchasing', hr: 'HR & Payroll', accounting: 'Accounting (WIP)', ai: 'AI (separate verification)', mobile: 'Mobile web app', email: 'Email (provider verification)', quickbooks: 'QuickBooks (separate verification)' };
   var signupsOpen = false;
   var signupKey = null;
   document.querySelectorAll('[data-open]').forEach(function (b) { b.addEventListener('click', function () {
@@ -156,32 +156,61 @@
     }
     box.classList.toggle('hidden', !box.children.length);
   }
-  var inquiryKey = null; // Kept across edits/retries on this page, never silently rotated.
+  // One immutable same-page request is retried until an exact acknowledgement.
+  // An abort/HTTP error does not prove that the server failed to record it.
+  var inquiryKey = null, inquiryBody = null, inquiryConfirmed = false;
+  document.getElementById('contact-new').addEventListener('click', function () {
+    if (!inquiryConfirmed) return;
+    inquiryKey = null; inquiryBody = null; inquiryConfirmed = false;
+    var form = document.getElementById('contact-form');
+    form.reset();
+    window.AFKInquiry.unlock();
+    form.querySelector('.error').textContent = '';
+    form.classList.remove('hidden');
+    document.getElementById('contact-done').classList.add('hidden');
+    var button = document.getElementById('contact-submit');
+    button.disabled = false; button.textContent = 'Send inquiry →';
+    document.getElementById('c-intent').focus();
+  });
   document.getElementById('contact-form').addEventListener('submit', async function (e) {
     e.preventDefault();
     var form = this, error = form.querySelector('.error'), button = document.getElementById('contact-submit');
-    if (button.disabled) return;
+    if (button.disabled || inquiryConfirmed) return;
     error.textContent = '';
+    if (!window.AFKInquiry) { error.textContent = 'The inquiry form did not load correctly. Reload or use the listed direct contact option.'; return; }
+    var adapter = window.AFKInquiry;
     var get = function (id) { return document.getElementById(id).value.trim(); };
-    if (!get('c-name') || !get('c-company')) { error.textContent = 'Enter your name and company.'; return; }
-    if (!document.getElementById('c-email').checkValidity() || !get('c-email')) { error.textContent = 'Enter a valid email address.'; return; }
-    if (!window.crypto || !window.crypto.randomUUID) { error.textContent = 'Use a current browser on a secure connection to send this form.'; return; }
-    if (!inquiryKey) inquiryKey = window.crypto.randomUUID();
+    if (!inquiryBody) {
+      if (!get('c-name')) { error.textContent = 'Enter your name.'; return; }
+      if (!adapter.company()) { error.textContent = 'Enter your company, or choose the individual referral option if it applies.'; return; }
+      if (!document.getElementById('c-email').checkValidity() || !get('c-email')) { error.textContent = 'Enter a valid email address.'; return; }
+      if (get('c-name').length > 120 || adapter.company().length > 160 || get('c-email').length > 254) { error.textContent = 'Please shorten the name, company or email address.'; return; }
+      if (get('c-phone').length > 40 || !/^[0-9+() \-]*$/.test(get('c-phone'))) { error.textContent = 'Enter a valid mobile number, or leave it empty.'; return; }
+      if (!window.crypto || !window.crypto.randomUUID) { error.textContent = 'Use a current browser on a secure connection to send this form.'; return; }
+      try {
+        var modules = adapter.partner() ? [] : Array.prototype.slice.call(document.querySelectorAll('#contact-modules input:checked')).map(function (i) { return i.value; });
+        var nextBody = JSON.stringify({ name: get('c-name'), company: adapter.company(), email: get('c-email'), phone: get('c-phone'), employees: adapter.partner() ? '' : document.getElementById('c-employees').value, modules: modules, message: adapter.message(get('c-message')), website: get('c-website') });
+        var nextKey = window.crypto.randomUUID();
+        inquiryBody = nextBody; inquiryKey = nextKey;
+        adapter.lock();
+      } catch (ex) { error.textContent = ex.message || 'Please check your inquiry details.'; return; }
+    }
     button.disabled = true; button.textContent = 'Sending…';
     var controller = new AbortController();
     var deadline = setTimeout(function () { controller.abort(); }, 20000);
     try {
-      var modules = Array.prototype.slice.call(document.querySelectorAll('#contact-modules input:checked')).map(function (i) { return i.value; });
-      var r = await fetch('/site/inquiry', { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', 'Idempotency-Key': inquiryKey }, body: JSON.stringify({
-        name: get('c-name'), company: get('c-company'), email: get('c-email'), phone: get('c-phone'),
-        employees: document.getElementById('c-employees').value, modules: modules, message: get('c-message'), website: get('c-website') }) });
+      var r = await fetch('/site/inquiry', { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', 'Idempotency-Key': inquiryKey }, body: inquiryBody });
       var data = await r.json().catch(function () { return {}; });
-      if (!r.ok) throw new Error(data && data.error || 'Your message could not be sent. Please try again.');
-      if (r.status !== 201 || !data || data.ok !== true) throw new Error('Message delivery is unconfirmed. Retry this form on the same page.');
+      if (!r.ok) throw new Error(data && data.error || 'Your inquiry could not be confirmed.');
+      if (r.status !== 201 || !data || data.ok !== true) throw new Error('Your inquiry could not be confirmed.');
+      inquiryConfirmed = true;
       form.classList.add('hidden');
       document.getElementById('contact-done').classList.remove('hidden');
-    } catch (ex) { error.textContent = controller.signal.aborted ? 'Message delivery is unconfirmed. Retry this form on the same page.' : ex.message; button.disabled = false; button.textContent = 'Send →'; }
-    finally { clearTimeout(deadline); }
+      document.getElementById('contact-new').focus();
+    } catch (ex) {
+      error.textContent = (controller.signal.aborted ? 'Sending timed out.' : (ex.message || 'Unable to connect.')) + ' Confirmation is pending. Retry this exact inquiry here. For corrections, use the listed direct contact option and mention this attempt.';
+      button.disabled = false; button.textContent = 'Retry same inquiry →';
+    } finally { clearTimeout(deadline); }
   });
   var path = window.location.pathname;
   if (path === '/login') document.getElementById('login-dialog').showModal();
