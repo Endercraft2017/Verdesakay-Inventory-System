@@ -39,13 +39,17 @@
     });
   }
   buttons.forEach(function (button) { button.addEventListener('click', function () { select(button.dataset.reviewStep, true); }); });
-  planner.querySelector('[data-review-inquiry]').addEventListener('click', function () {
+  function suggestBrief(value) {
     var field = document.getElementById('c-workflow');
     // Never replace a visitor's edited brief when they reopen the dialog.
     if (field && (!field.value || field.dataset.demoSuggested === field.value)) {
-      field.value = briefs[selected]; field.dataset.demoSuggested = field.value;
+      field.value = value; field.dataset.demoSuggested = field.value;
       field.dispatchEvent(new Event('input', {bubbles: true}));
     }
+  }
+  planner.querySelector('[data-review-inquiry]').addEventListener('click', function () { suggestBrief(briefs[selected]); });
+  document.querySelectorAll('[data-operations-brief]').forEach(function (button) {
+    button.addEventListener('click', function () { suggestBrief(button.dataset.operationsBrief); });
   });
   select(selected, false);
   controls.hidden = false;
@@ -58,6 +62,6 @@
         observer.unobserve(entry.target); animate(entry.target, 14, 420);
       });
     }, {threshold: 0.15});
-    document.querySelectorAll('.demo-planner,.fit-section h2,.subscription > div').forEach(function (element) { observer.observe(element); });
+    document.querySelectorAll('.demo-planner,.fit-section h2,.operations-grid article,.subscription > div').forEach(function (element) { observer.observe(element); });
   }
 })();

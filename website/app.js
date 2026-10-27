@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   var slug = function (v) { return v.trim().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); };
-  var LABELS = { inventory: 'Inventory', manufacturing: 'Manufacturing', purchasing: 'Purchasing', hr: 'HR & Payroll', accounting: 'Accounting (WIP — review required)', ai: 'AI Assistant', mobile: 'Mobile app', email: 'Email', quickbooks: 'QuickBooks' };
+  var LABELS = { inventory: 'Warehouse & Inventory', manufacturing: 'Production', sales: 'Sales', purchasing: 'Purchasing', hr: 'HR & Payroll', accounting: 'Accounting (WIP — review required)', ai: 'AI Assistant', mobile: 'Mobile app', email: 'Email', quickbooks: 'QuickBooks' };
   var signupsOpen = false;
   document.querySelectorAll('[data-open]').forEach(function (b) { b.addEventListener('click', function () {
     // Self-service sign-up is off unless the owner opens it; every "sign up" path leads to Talk to us.
