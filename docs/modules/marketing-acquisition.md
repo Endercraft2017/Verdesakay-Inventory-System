@@ -24,3 +24,9 @@ dependencies. These are not browser layout, payroll or live production acceptanc
 Real screenshots, hosted mobile/keyboard/reduced-motion checks, owner queue receipt,
 external mail and buyer comprehension are still release gates. No screenshot qualifies
 yet because the live authenticated sandbox task could not be completed.
+
+Copy refinement: the homepage now describes the buyer’s HR demo and pilot checks in plain language instead of exposing internal source-inspection terminology. End-to-end validation remains explicitly pending; the demo agenda remains labeled as an agenda, not screenshots. No product readiness status or API contract changes.
+
+Local browser verification (27 October 2026): Chromium at 1440/390 passed homepage and open contact/login axe checks after CSS contrast fixes. Native modal keyboard/return focus, invalid-input and aborted-network recovery, reduced motion, config failure and no-JS static contact were checked. Only /site/config was synthetic; inquiry delivery and ERP workflows were not tested. Ten isolated DOM/API tests pass. Hosted and target-user validation remain pending.
+
+GitHub design references reviewed: Motion (motiondivision/motion, LICENSE.md MIT, vanilla JavaScript support) is the candidate for future multi-screen orchestration. Animate.css currently carries Hippocratic 2.1 terms; Hover.css documents separate commercial terms. Neither was vendored. W3C aria-practices dialog-modal examples informed keyboard review. Existing native CSS 150ms opacity feedback remains the single motion approach; reduced-motion disables transitions. No runtime package was added for effects that existing CSS already supplies. Genuine product-screen animation waits for verified, safe product capture.
