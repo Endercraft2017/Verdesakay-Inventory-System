@@ -52,7 +52,7 @@ router.post('/', limiter, (req, res) => {
     `${b.name} from ${b.company} sent the "Talk to us" form.`, '',
     `Email: ${b.email}`, b.phone ? `Mobile: ${b.phone}` : '', b.employees ? `Employees: ${b.employees}` : '',
     b.modules?.length ? `Interested in: ${b.modules.join(', ')}` : '', b.message ? `\nMessage:\n${b.message}` : '',
-  ]);
+  ], { replyTo: b.email });
   res.status(201).json({ ok: true });
 });
 

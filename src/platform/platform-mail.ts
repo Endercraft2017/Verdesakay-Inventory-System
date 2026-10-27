@@ -9,12 +9,15 @@
  *  - `brevo` — Brevo's HTTPS email API (works on any host; free tier ~300 emails/day);
  *  - `smtp`  — any SMTP mailbox (e.g. Gmail with an App Password), where the host allows SMTP.
  * Alerts never block or fail the request that triggered them; each attempt lands in the log.
+ * Website inquiry alerts additionally support explicit server-only SendFox environment settings.
+ * Those override the stored transport only for inquiries and still honor alert_inquiry.
  */
 import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
 import type { DatabaseSync } from 'node:sqlite';
 import { platformDb, platformHost } from './platform';
 import { encryptWithKey, decryptWithKey } from '../shared/secrets';
+import { inquirySendFoxEnabled, sendSendFoxInquiry } from './inquiry-mail';
 
 export type MailTransport = 'off' | 'brevo' | 'smtp';
 export type AlertKind = 'inquiry' | 'payment' | 'signup';
@@ -104,7 +107,7 @@ export function mailProblem(s = getPlatformMail()): string | null {
 }
 
 /** Messages "sent" while NODE_ENV=test (nothing leaves the machine). */
-export const _testOutbox: Array<{ to: string[]; subject: string; text: string }> = [];
+export const _testOutbox: Array<{ to: string[]; subject: string; text: string; replyTo?: string }> = [];
 
 export async function sendPlatformMail(args: { to: string[]; subject: string; text: string; kind?: string }): Promise<{ ok: boolean; error?: string }> {
   const s = getPlatformMail();
@@ -162,14 +165,29 @@ function consoleUrl(): string {
 }
 
 /** Tell the owner something happened — if that alert is on and email is set up. Never throws. */
-export async function notifyOwner(kind: AlertKind, subject: string, lines: string[]): Promise<void> {
+export async function notifyOwner(kind: AlertKind, subject: string, lines: string[], options: { replyTo?: string } = {}): Promise<void> {
   try {
     const s = getPlatformMail();
     const on = kind === 'inquiry' ? s.alert_inquiry : kind === 'payment' ? s.alert_payment : s.alert_signup;
-    if (!on || s.transport === 'off' || !s.alert_to.trim()) return;
+    if (!on) return;
+    const text = `${lines.filter(Boolean).join('\n')}\n\nOpen the owner console: ${consoleUrl()}\n`;
+    // Explicit environment configuration selects SendFox only for website inquiries.
+    // The existing alert switch remains authoritative; other alert transports/settings are untouched.
+    if (kind === 'inquiry' && inquirySendFoxEnabled()) {
+      const result = await sendSendFoxInquiry({ subject, text, replyTo: options.replyTo }, { dryRun: process.env.NODE_ENV === 'test' });
+      if (process.env.NODE_ENV !== 'test') {
+        if (result.ok) console.info('[platform-mail] inquiry queued via SendFox');
+        else console.error('[platform-mail] inquiry notification failed:', result.error);
+      }
+      if (result.ok && process.env.NODE_ENV === 'test') _testOutbox.push({ to: result.to, subject, text, replyTo: options.replyTo });
+      db().prepare('INSERT INTO platform_mail_log (to_addr, subject, kind, status, error) VALUES (?, ?, ?, ?, ?)')
+        .run(result.to.join(', ') || '(none)', subject, kind, result.ok ? 'sent' : 'failed', result.error ?? null);
+      return; // Never retry through SMTP/Brevo after an accepted or uncertain SendFox request.
+    }
+    if (s.transport === 'off' || !s.alert_to.trim()) return;
     await sendPlatformMail({
       to: s.alert_to.split(','), subject, kind,
-      text: `${lines.filter(Boolean).join('\n')}\n\nOpen the owner console: ${consoleUrl()}\n`,
+      text,
     });
   } catch (e) {
     console.error(`[platform-mail] ${kind} alert failed: ${(e as Error).message}`);
