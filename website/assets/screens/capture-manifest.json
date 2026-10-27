@@ -1,0 +1,62 @@
+{
+  "sourceCommit": "b9add899362c5a28fbf82c31626b7726c3ec66c0",
+  "workingTree": true,
+  "synthetic": true,
+  "source": "Real createApp handlers and disposable SQLite; capture.mjs, no image repainting or cropping.",
+  "files": [
+    {
+      "key": "attendance",
+      "source": "attendance-1440-light.png",
+      "sourceSha256": "019830e02df419e43ab967d7ab09e0cd394d398251f5de991d1c15f2dc4c1a8f",
+      "webpSha256": "a99ec1366018b880eb6eca4f47545888b7ac9b6f816d2f28f2908c379401506c"
+    },
+    {
+      "key": "payroll",
+      "source": "payroll-1440-light.png",
+      "sourceSha256": "e1bffb810aedb46c1545ef6346fd7257824dcae74117e83210e3e1c8627e11d0",
+      "webpSha256": "8d0bb2b74209afe8c30f990fd21b6e5739aef4f4ff6a350c89159b39be3d8760"
+    },
+    {
+      "key": "mobile",
+      "source": "mobile-390-light.png",
+      "sourceSha256": "dc7083e60da922c3b029afdbc2982c3d34d298fc65edaf7dc7c9b568fdb945ca",
+      "webpSha256": "d0411651fac8b4fd77487d5e1ad31264719587511052cb3b8f121ea529aac586"
+    },
+    {
+      "key": "inventory",
+      "source": "inventory-1440-light.png",
+      "sourceSha256": "dbfd1833d83d5d96b3d989b69a3fabd69b97bde6d73bdab0a7bd667ac157539b",
+      "webpSha256": "b4912665eace96a593144217163d47cfd5e8a6faefb22ba539f7ada42577f9b5"
+    },
+    {
+      "key": "production",
+      "source": "production-1440-light.png",
+      "sourceSha256": "81fcd65e0539b1fd8a384482f89963ed3513110420fc37008b454755ec51ddbb",
+      "webpSha256": "5c29c9c0348a643a86f01215f4eb954a36961c657fa3496849ba8e1ce7b59e66"
+    },
+    {
+      "key": "sales",
+      "source": "sales-1440-light.png",
+      "sourceSha256": "a076ed720500d143fd64d0482a07cc9e55f35f2fbdcb55dc94ca7d92f7900fc7",
+      "webpSha256": "af8e96239929e41f45b93f68c5e84d071c3648aa6483a2fdcd8897f5771e1007"
+    }
+  ],
+  "styleSources": [
+    {
+      "file": "public/css/otom-tokens.css",
+      "sha256": "20b207c886077d4c710e74813c97f70dea2a81f1369979d5f8fb60ab87e9791f"
+    },
+    {
+      "file": "public/css/styles.css",
+      "sha256": "eb20be245cfd49eee8b7036ede13f629a7beec8031d49a81df625df4b0964098"
+    },
+    {
+      "file": "public/css/visual-refresh.css",
+      "sha256": "34dc07ff13dbc37f1f9e2c2091df20b24392a264cd53901c66ecf7e6f2513793"
+    },
+    {
+      "file": "public/mobile/mobile-v2.css",
+      "sha256": "d3d4eb878a0667603c5675350adf29684f47dc76aa19ddfcfa69cd808218b546"
+    }
+  ]
+}

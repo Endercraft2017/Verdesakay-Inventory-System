@@ -1,0 +1,28 @@
+/* OTOM approved forest/neutral theme. AFK³ parent-brand pages do not load this file. */
+:root,[data-theme='light']{
+ color-scheme:light;
+ --otom-bg:#F5F6F0;--otom-surface:#FFFFFF;--otom-surface-soft:#E7ECDF;--otom-surface-raised:#F0F3EA;
+ --otom-text:#183C35;--otom-muted:#50645C;--otom-border:#D4DDD1;--otom-control-border:#7B9084;
+ --otom-primary:#1D5946;--otom-primary-hover:#123E31;--otom-on-primary:#FFFFFF;
+ --otom-selection:#E7ECDF;--otom-selection-text:#183C35;--otom-focus:#1D5946;
+ --otom-success:#226345;--otom-success-bg:#E6F1E8;--otom-warning:#805014;--otom-warning-bg:#FFF1D8;
+ --otom-error:#AC3034;--otom-error-bg:#FBE9E6;--otom-info:#245E78;--otom-info-bg:#E7F1F5;
+ --otom-on-deep:#F4F8F0;--otom-deep:#123E31;
+ --otom-shadow-sm:0 1px 3px rgb(24 60 53 / 6%);--otom-shadow-md:0 6px 20px rgb(24 60 53 / 8%);--otom-shadow-lg:0 16px 44px rgb(24 60 53 / 14%);
+ --otom-shadow-color:rgb(24 60 53 / 8%);--otom-overlay:rgb(16 28 23 / 65%);
+ --otom-font-ui:'Segoe UI',system-ui,-apple-system,sans-serif;
+ --otom-chart-1:var(--otom-primary);--otom-chart-2:#6A8D74;--otom-chart-3:var(--otom-info);--otom-chart-4:var(--otom-warning);--otom-chart-5:var(--otom-error);
+}
+[data-theme='dark']{
+ color-scheme:dark;
+ --otom-bg:#101C17;--otom-surface:#17271F;--otom-surface-soft:#263B2E;--otom-surface-raised:#21342A;
+ --otom-text:#EDF4ED;--otom-muted:#B3C4B9;--otom-border:#41594B;--otom-control-border:#81998A;
+ --otom-primary:#91C8A6;--otom-primary-hover:#AFD8B9;--otom-on-primary:#102019;
+ --otom-selection:#2D4938;--otom-selection-text:#EDF4ED;--otom-focus:#B9DABD;
+ --otom-success:#A0D4B0;--otom-success-bg:#163629;--otom-warning:#F1CF8E;--otom-warning-bg:#362C19;
+ --otom-error:#FFB4A7;--otom-error-bg:#422B28;--otom-info:#ABD6E8;--otom-info-bg:#1C343F;
+ --otom-on-deep:#EDF4ED;--otom-deep:#1A4434;
+ --otom-shadow-sm:0 1px 3px rgb(0 0 0 / 16%);--otom-shadow-md:0 6px 20px rgb(0 0 0 / 20%);--otom-shadow-lg:0 16px 44px rgb(0 0 0 / 28%);
+ --otom-chart-2:#B3C4B9;
+}
+::selection{background:var(--otom-selection);color:var(--otom-selection-text)}

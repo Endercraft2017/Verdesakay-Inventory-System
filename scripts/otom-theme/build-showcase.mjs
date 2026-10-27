@@ -1,0 +1,5 @@
+import fs from 'node:fs';import path from 'node:path';import{build}from'esbuild';import{createRequire}from'node:module';
+const root=path.resolve(import.meta.dirname,'../..'),require=createRequire(import.meta.url),pkg=JSON.parse(fs.readFileSync(path.join(root,'node_modules/swiper/package.json')));if(pkg.version!=='14.3.0')throw Error('Unexpected Swiper version');
+await build({entryPoints:[path.join(root,'website/showcase.entry.js')],outfile:path.join(root,'website/showcase.js'),bundle:true,format:'iife',target:['es2022'],minify:true,legalComments:'eof'});
+const swiper=path.dirname(require.resolve('swiper/package.json'));fs.copyFileSync(path.join(swiper,'swiper.css'),path.join(root,'website/vendor/swiper-core.css'));fs.copyFileSync(path.join(swiper,'modules/effect-coverflow.css'),path.join(root,'website/vendor/swiper-coverflow.css'));fs.copyFileSync(path.join(swiper,'LICENSE'),path.join(root,'website/vendor/SWIPER-LICENSE.txt'));
+console.log('Built four-module Swiper 14.3.0 showcase; Pagination excluded to preserve grouped selectors and focus.');

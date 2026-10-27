@@ -1,0 +1,70 @@
+{
+  "scope": "Approved OTOM semantic theme across desktop/mobile ERP and timed source-screenshot marketing carousel; preserve AFK\u00b3 branding and business behavior.",
+  "deeperWork": [
+    "A professional would map legacy visual aliases to semantic tokens, preserve state meanings and parent-brand boundaries, and model autoplay as an accessible state machine rather than a timer alone.",
+    "Start from current PR #2 source, original ERP styles/components, actual API handlers, disposable fixture records, original screenshots and the carousel module implementation/docs\u2014not screenshots repainted as product UI.",
+    "Use pinned Genjutsu, Taste, Hallmark and Brag guidance; official Swiper and WAI carousel documentation; existing esbuild/Playwright/axe tools and real Express/SQLite fixtures. Compare static manual gallery, custom CSS depth and Swiper Coverflow before choosing.",
+    "Independent evidence: semantic contrast measurements, real-source before/after captures at four widths in both themes, preserved API/form tests, explicit autoplay/pause/focus/offscreen/reduced-motion/image-failure tests, and a continuous 18-second recording with at least two automatic transitions. Physical-device and production acceptance remain separate."
+  ],
+  "rewrittenBrief": "Implement the provided OTOM palette as shared semantic light/dark tokens and map existing desktop/mobile surfaces and states without changing business handlers or AFK\u00b3 identity. Upgrade PR #2's genuine screenshot gallery to an accessible 3D showcase using only justified dependencies. Preserve HR-first content, inquiry/login wiring, accurate captions, responsive image ratios and static fallback. Capture updated real ERP screens with disposable data, verify four viewport widths and lifecycle/accessibility behavior, record two automatic transitions, and deliver a private preview plus a review branch before production rollout.",
+  "sources": [
+    {
+      "repository": "AThevon/genjutsu",
+      "commit": "1f518a71378b15d423389e546e767cffc86e14c3",
+      "license": "MIT",
+      "applied": "Frequency-based motion, transform/opacity, explicit reduced-motion and looping pause."
+    },
+    {
+      "repository": "Leonxlnx/taste-skill",
+      "commit": "12af471f627f866411b4bd785b19646d3672784c",
+      "license": "MIT",
+      "applied": "Real product material, restrained app surfaces, visual browser review with palette retained."
+    },
+    {
+      "repository": "Nutlope/hallmark",
+      "commit": "7ec868225c6caa040558c321ee0fefa0e73f83a8",
+      "license": "MIT",
+      "applied": "Existing-design audit: preserve wiring and claims, tokenized color, readable hierarchy, responsive/focus/contrast polish."
+    },
+    {
+      "repository": "latent-spaces/brag",
+      "commit": "669ab9286aa28b6c3ee30e75f181ee74319d012a",
+      "license": "MIT",
+      "applied": "Polished, long product holds and genuine materials; verification recording rather than an optional promotional launch video."
+    },
+    {
+      "url": "https://swiperjs.com/swiper-api",
+      "version": "14.3.0",
+      "license": "MIT",
+      "applied": "Evaluate Coverflow, Autoplay, Navigation, Pagination and A11y; bundle only used modules."
+    },
+    {
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/carousel/",
+      "applied": "Stop on focus/manual interaction, explicit Play, nonrepetitive announcements and static access."
+    }
+  ],
+  "decisions": [
+    "The user's approved palette and existing workflow layouts override random theme draws or marketing-layout prescriptions. No new framework or invented proof is introduced.",
+    "Existing dense ERP screens keep their forms/tables/navigation; decorative purple/blue ambient treatments become neutral OTOM surfaces. Success, warning, danger and information remain separate semantic states.",
+    "Carousel uses a 5500ms hold and 750ms spatial transition; reduced motion is instant/manual. Temporary hover/offscreen/hidden suspension differs from explicit manual/focus stop, which requires Play."
+  ],
+  "verification": {
+    "completed": [
+      "32 genuine after captures, 8 before captures; attendance/mobile at four widths in both themes and representative inventory/production desktop/mobile in both themes",
+      "Six marketing images recaptured; source hashes and responsive variants",
+      "Four marketing widths: no axe violations, overflow or image/caption mismatch",
+      "Lifecycle, image failure/retry, static fallback, form edit retention and keyboard focus browser checks",
+      "18-second continuous real-browser recording with multiple automatic transitions",
+      "Emulated horizontal/vertical touch and 200% marketing text enlargement",
+      "18 semantic contrast pairs exceed 4.5:1",
+      "TypeScript and 230 tests in five backend suites; 10 marketing contract tests",
+      "Private-preview nested path checked at all four widths; evidence/assets/video load and review transport rejects writes"
+    ],
+    "limits": [
+      "Representative Chromium coverage; not every ERP route",
+      "Emulated touch and injected hidden-document event, not physical-device or OS-tab validation",
+      "Synthetic local backend; no production, physical camera, live inquiry, staff acceptance or regulatory certification"
+    ],
+    "hallmarkAudit": "Static audit ran. Useful disabled fill/ink/cursor and minmax grid checks applied. Generic stamp, typography, copy and repeated-card gates remain disclosed; no claim that the style score passed."
+  }
+}

@@ -1,53 +1,53 @@
 /* Otom Mobile V2 — shared shell translated from Figma nodes 46:515/46:519.
    Loaded after mobile.css so the redesign can be introduced without breaking legacy views. */
 :root {
-  --v2-bg: #f7f9f7;
-  --v2-surface: #ffffff;
-  --v2-surface-soft: #edf4ef;
-  --v2-text: #13271b;
-  --v2-text-2: #20372a;
-  --v2-muted: #5f6e64;
-  --v2-line: #dfe8e1;
-  --v2-green: #1b6b46;
-  --v2-green-deep: #11492f;
-  --v2-on-accent: #ffffff;
-  --v2-on-deep: #edf7f0;
-  --v2-on-danger: #ffffff;
-  --v2-positive-text: #176b45;
-  --v2-danger-soft: #fbece9;
-  --v2-green-soft: #ddf3e5;
-  --v2-warn-soft: #fff7e9;
-  --v2-warn-text: #765224;
-  --v2-warn-line: #eadfc9;
-  --v2-danger: #b5473c;
+  --v2-bg: var(--otom-bg);
+  --v2-surface: var(--otom-surface);
+  --v2-surface-soft: var(--otom-surface-soft);
+  --v2-text: var(--otom-text);
+  --v2-text-2: var(--otom-text);
+  --v2-muted: var(--otom-muted);
+  --v2-line: var(--otom-border);
+  --v2-green: var(--otom-primary);
+  --v2-green-deep: var(--otom-deep);
+  --v2-on-accent: var(--otom-on-primary);
+  --v2-on-deep: var(--otom-on-deep);
+  --v2-on-danger: #FFFFFF;
+  --v2-positive-text: var(--otom-success);
+  --v2-danger-soft: var(--otom-error-bg);
+  --v2-green-soft: var(--otom-selection);
+  --v2-warn-soft: var(--otom-warning-bg);
+  --v2-warn-text: var(--otom-warning);
+  --v2-warn-line: var(--otom-control-border);
+  --v2-danger: var(--otom-error);
   --v2-radius-xl: 28px;
   --v2-radius-lg: 22px;
   --v2-radius-md: 18px;
-  --v2-shadow: 0 8px 22px rgba(13, 33, 23, .10);
-  --v2-shadow-float: 0 12px 30px rgba(13, 33, 23, .18);
+  --v2-shadow: var(--otom-shadow-md);
+  --v2-shadow-float: var(--otom-shadow-lg);
   --v2-safe-bottom: max(16px, env(safe-area-inset-bottom));
 }
 :root[data-theme="dark"] {
-  --v2-bg: #0f1712;
-  --v2-surface: #18231c;
-  --v2-surface-soft: #223128;
-  --v2-text: #edf7f0;
-  --v2-text-2: #dce9e0;
-  --v2-muted: #a4b3a8;
-  --v2-line: #32463a;
-  --v2-green: #3ba875;
-  --v2-green-deep: #174c34;
-  --v2-on-accent: #07140d;
-  --v2-on-danger: #07140d;
-  --v2-positive-text: #8fe0b3;
-  --v2-danger-soft: #3d2521;
-  --v2-green-soft: #244b35;
-  --v2-warn-soft: #3a2b18;
-  --v2-warn-text: #efc987;
-  --v2-warn-line: #5a4527;
-  --v2-danger: #f0877c;
-  --v2-shadow: 0 10px 26px rgba(0, 0, 0, .28);
-  --v2-shadow-float: 0 16px 36px rgba(0, 0, 0, .42);
+  --v2-bg: var(--otom-bg);
+  --v2-surface: var(--otom-surface);
+  --v2-surface-soft: var(--otom-surface-soft);
+  --v2-text: var(--otom-text);
+  --v2-text-2: var(--otom-text);
+  --v2-muted: var(--otom-muted);
+  --v2-line: var(--otom-border);
+  --v2-green: var(--otom-primary);
+  --v2-green-deep: var(--otom-deep);
+  --v2-on-accent: var(--otom-on-primary);
+  --v2-on-danger: var(--otom-bg);
+  --v2-positive-text: var(--otom-success);
+  --v2-danger-soft: var(--otom-error-bg);
+  --v2-green-soft: var(--otom-selection);
+  --v2-warn-soft: var(--otom-warning-bg);
+  --v2-warn-text: var(--otom-warning);
+  --v2-warn-line: var(--otom-control-border);
+  --v2-danger: var(--otom-error);
+  --v2-shadow: var(--otom-shadow-md);
+  --v2-shadow-float: var(--otom-shadow-lg);
 }
 /* Aliases for the generic names the Profile and role-screen layers use (they were written
    against desktop token names that the mobile app never defined). */
@@ -1473,3 +1473,7 @@ html:has(.m-pull-refresh.is-visible){overscroll-behavior-y:contain}
 .rk-field input.m-flow-quantity:focus-visible{outline:2px solid var(--v2-green);outline-offset:2px}
 .m-flow-section .rk-thumbs span{width:88px;height:88px}
 .m-flow-section .rk-thumbs button{width:44px;height:44px;min-width:44px;min-height:44px;font-size:18px}
+
+/* Shared OTOM information and focus semantics, without changing workflow layout. */
+:root{--v2-info:var(--otom-info);--v2-info-soft:var(--otom-info-bg)}
+.m-select-trigger:focus-visible,.m-input:focus-visible{outline-color:var(--otom-focus)}
