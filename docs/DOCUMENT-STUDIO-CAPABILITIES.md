@@ -193,3 +193,11 @@ Insert symbol shows centered symbols with descriptive tooltips and keyboard-acce
 Click the company header divider, or select company-header text and open Inspect, to change its line style, thickness or color. Remove divider hides the line while keeping company information; choose a visible line style to restore it. Changes support Undo and persist with the template.
 
 Insert → Variable opens the existing searchable picker for quick insertion at the cursor. The Variables sidebar remains the full bank for search, copy, formulas and field management.
+
+Top and left rulers show physical page measurements and shaded margins while editing.
+The indicator follows the pointer over the document and the caret while typing. Layout →
+View offers Show rulers and Ruler settings; clicking the unit label in the corner opens
+the same settings. Choose mm, cm or inches, page-edge or text-area zero, and cursor visibility.
+Preferences apply to this browser, persist across templates, and do not change document,
+Undo or print data. Rulers track zoom, scrolling, custom dimensions and the active design
+page; source/print views use their own workspace.

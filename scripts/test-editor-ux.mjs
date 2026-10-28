@@ -75,6 +75,26 @@ try {
   await page.waitForFunction(() => document.querySelector('.doc-shared-status')?.textContent.includes('Connected'));
 
   if(!process.env.EDITOR_UX_LAYERS_ONLY){
+  await check('Rulers measure pointer position, units and margins without changing the document',async()=>{
+    const authored=()=>page.locator('.doc-surface').evaluate(el=>window.DocEditor.serializeEditor(el));
+    const before=await authored();const saved=(await api('GET',`/templates/${template.id}`)).body;
+    const pointAt=async(x,y)=>{const box=await page.locator('.doc-surface').boundingBox();assert(box);const scale=box.width/210;await page.mouse.move(box.x+x*scale,box.y+y*scale);await page.waitForFunction(({x,y})=>Math.abs(Number(document.querySelector('.doc-ruler-x').dataset.rulerPosition)-x)<.2&&Math.abs(Number(document.querySelector('.doc-ruler-y').dataset.rulerPosition)-y)<.2,{x,y});};
+    assert(await page.locator('.doc-ruler-x').isVisible());assert(await page.locator('.doc-ruler-y').isVisible());await pointAt(50,70);
+    for(const theme of ['light','dark']){await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);await scan('rulers-'+theme);}
+    await page.locator('.doc-ruler-corner').click();let dialog=page.getByRole('dialog',{name:'Ruler settings',exact:true});await dialog.locator('[data-pref=rulerUnit]').selectOption('in');await dialog.locator('[data-pref=rulerOrigin]').selectOption('content');await scan('ruler-settings','[role=dialog]');await dialog.locator('[data-confirm]').click();
+    const box=await page.locator('.doc-surface').boundingBox();await page.mouse.move(box.x+50*box.width/210,box.y+70*box.width/210);
+    await page.waitForFunction(()=>document.querySelector('.doc-ruler-corner').textContent==='in'&&Math.abs(Number(document.querySelector('.doc-ruler-x').dataset.rulerPosition)-36)<.2);
+    assert((await page.locator('.doc-ruler-x').getAttribute('aria-label')).includes('inches'));
+    await page.locator('.doc-ruler-corner').click();dialog=page.getByRole('dialog',{name:'Ruler settings',exact:true});await dialog.locator('[data-pref=rulerUnit]').selectOption('cm');await dialog.locator('[data-pref=rulers]').uncheck();await dialog.locator('[data-confirm]').click();assert(await page.locator('.doc-ruler-x').isHidden());
+    assert.equal(await authored(),before);assert.equal((await api('GET',`/templates/${template.id}`)).body,saved);assert.equal(await page.locator('.doc-fs-bar .doc-save-status').textContent(),'No unsaved changes');
+    await editorButton('data-close').click();await page.locator('.doc-fs').waitFor({state:'hidden'});await page.locator(`[data-edit="${template.id}"]`).click();await page.waitForFunction(()=>document.querySelector('.doc-shared-status')?.textContent.includes('Connected'));
+    assert(await page.locator('.doc-ruler-x').isHidden());assert.equal(await page.locator('.doc-ruler-corner').textContent(),'cm');
+    await page.locator('[data-tab=layout]').click();await editorButton('data-ruler-settings').click();dialog=page.getByRole('dialog',{name:'Ruler settings',exact:true});await dialog.locator('[data-pref=rulers]').check();await dialog.locator('[data-pref=rulerUnit]').selectOption('mm');await dialog.locator('[data-pref=rulerOrigin]').selectOption('page');await dialog.locator('[data-confirm]').click();
+    await page.locator('.doc-zoomsel').selectOption('2');const canvas=page.locator('.doc-canvas');await canvas.evaluate(el=>{el.scrollLeft=140;el.scrollTop=180;});
+    const visible=await canvas.boundingBox(),paper=await page.locator('.doc-surface').boundingBox();const px=Math.max(visible.x+30,paper.x+40),py=Math.max(visible.y+30,paper.y+40);await page.mouse.move(px,py);
+    await page.waitForFunction(({px,py})=>{const rect=document.querySelector('.doc-surface').getBoundingClientRect(),scale=rect.width/210;return Math.abs(Number(document.querySelector('.doc-ruler-x').dataset.rulerPosition)-(px-rect.left)/scale)<.2&&Math.abs(Number(document.querySelector('.doc-ruler-y').dataset.rulerPosition)-(py-rect.top)/scale)<.2;},{px,py});
+    await page.locator('.doc-zoomsel').selectOption('fit');await canvas.evaluate(el=>{el.scrollTop=0;el.scrollLeft=0;});await page.locator('[data-tab=home]').click();
+  });
   for (const theme of ['light', 'dark']) {
     await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
     for (const tab of ['home','insert','layout']) {
@@ -127,6 +147,10 @@ try {
     assert.equal(await page.locator('.doc-fs-bar .doc-save-status').textContent(),'No unsaved changes');
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await check('Rulers stay outside HTML source and print modes',async()=>{
+    await page.locator('.doc-more-menu summary').click();await editorButton('data-mode=code').click();await page.waitForFunction(()=>document.querySelector('.doc-fs').dataset.editorMode==='code');assert(await page.locator('.doc-ruler-frame').isHidden());assert(await page.locator('.doc-code-cm').isVisible());
+    await editorButton('data-mode=visual').click();assert(await page.locator('.doc-ruler-x').isVisible());assert(!(await page.locator('.doc-surface').evaluate(el=>window.DocEditor.serializeEditor(el))).includes('doc-ruler'));
+  });
   await check('Company header divider supports direct selection, styling, removal and Undo',async()=>{
     const header=page.locator('.doc-surface .doc-head');const box=await header.boundingBox();assert(box);await header.click({position:{x:box.width/2,y:box.height-2}});
     assert(await page.locator('.doc-header-divider').isVisible());
@@ -138,6 +162,12 @@ try {
     for(const theme of ['light','dark']){await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);await scan('header-divider-'+theme);}
     await page.locator('[data-header-divider-remove]').click();assert.equal((await border()).style,'none');assert.equal(await page.locator('.doc-surface [data-token]').count(),fields);
     await editorButton('data-ex=undo').click();assert.deepEqual(await border(),{width:'4px',style:'dashed',color:'rgb(51, 68, 85)'});await editorButton('data-inspector-close').click();
+  });
+  await check('Ruler markers follow the text caret and typing without stealing selection',async()=>{
+    const paragraph=page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).first();await paragraph.click();await page.keyboard.press('End');await page.keyboard.type(' ruler typing');
+    await page.waitForFunction(()=>document.querySelector('.doc-ruler-marker[visibility=visible]')&&document.querySelector('.doc-ruler-frame').dataset.rulerSource==='caret');await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(()=>{const sel=getSelection();if(!sel.rangeCount)return false;const range=document.createRange();range.setStart(sel.focusNode,sel.focusOffset);range.collapse(true);const rect=range.getBoundingClientRect(),paper=document.querySelector('.doc-surface').getBoundingClientRect();return rect.height>0&&Math.abs(Number(document.querySelector('.doc-ruler-x').dataset.rulerPosition)-(rect.left-paper.left)/(paper.width/210))<.2;});
+    assert((await paragraph.textContent()).includes(' ruler typing'));await editorButton('data-ex=undo').click();assert(!(await paragraph.textContent()).includes(' ruler typing'));
   });
   await check('Variable bank copies complete tokens and field management returns to the editor', async () => {
     await editorButton('data-studio-tab=Data').click();
@@ -270,13 +300,13 @@ try {
     await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);await page.mouse.down();
     await page.mouse.move(bounds.x+bounds.width/2+96/25.4*10*.5,bounds.y+bounds.height/2+96/25.4*10*.5,{steps:5});await page.mouse.up();
     assert.equal(await page.locator('.doc-custom-w').inputValue(),'190');assert.equal(await page.locator('.doc-custom-h').inputValue(),'260');
-    await editorButton('data-ex=undo').click();assert.equal(await page.locator('.doc-custom-w').inputValue(),'180');assert.equal(await page.locator('.doc-custom-h').inputValue(),'250');
+    await editorButton('data-ex=undo').click();assert.equal(await page.locator('.doc-custom-w').inputValue(),'180');assert.equal(await page.locator('.doc-custom-h').inputValue(),'250');await page.waitForFunction(()=>{const scale=Number(document.querySelector('.doc-ruler-x').dataset.rulerScale),rect=document.querySelector('.doc-surface').getBoundingClientRect();return Math.abs(scale-rect.width/180)<.01;});
   });
   await check('Print-grid controls remain usable beside the measured preview and preserve proportional scaling', async () => {
     await editorButton('data-studio-tab=Print').click();
     for(const [selector,value] of [['.doc-copies','2'],['.doc-records-per-page','2'],['.doc-gap-x','0']]){await page.locator(selector).fill(value);await page.locator(selector).press('Tab');}
     await editorButton('data-print-preview').click();
-    await page.waitForFunction(()=>document.querySelector('.doc-pageview iframe')?.contentDocument?.querySelectorAll('.tiled-cell-inner').length===4);
+    await page.waitForFunction(()=>document.querySelector('.doc-pageview iframe')?.contentDocument?.querySelectorAll('.tiled-cell-inner').length===4);assert(await page.locator('.doc-ruler-frame').isHidden());
     assert(await page.locator('.doc-copies').isVisible()); assert(await page.locator('.doc-gap-x').isVisible());
     await scan('print-preview-sidebar','.doc-studio-side');
     await page.locator('.doc-gap-x').fill('3');await page.locator('.doc-gap-x').press('Tab');
@@ -315,6 +345,7 @@ try {
   await check('A multipage design disables grid printing', async () => {
     await editorButton('data-studio-tab=Pages').click();
     await editorButton('data-adv=page-add').click(); await editorButton('data-adv=page-add').click();
+    await editorButton('data-inspector-close').click();const firstDesign=page.locator('.doc-surface [data-doc-design-page]').first();await firstDesign.locator('p,h1,h2,h3').first().click();await page.keyboard.press('ArrowRight');await page.mouse.move(300,20);const design=page.locator('.doc-surface [data-doc-design-page]').last();await design.scrollIntoViewIfNeeded();await page.waitForFunction(()=>document.querySelectorAll('.doc-ruler-y .doc-ruler-number').length>0);const designBox=await design.boundingBox();await page.mouse.move(designBox.x+30,designBox.y+30);await page.waitForFunction(({top,y})=>{const root=document.querySelector('.doc-surface').getBoundingClientRect(),scale=root.width/Number(document.querySelector('.doc-custom-w').value),margin=Number(document.querySelector('.doc-margin').value)||0,marker=document.querySelector('.doc-ruler-y').dataset.rulerPosition;return marker!==undefined&&Math.abs(Number(marker)-((y-top)/scale+margin))<.5;},{top:designBox.y,y:designBox.y+30});await editorButton('data-studio-tab=Pages').click();
     assert(await page.locator('.doc-copies').isDisabled());
     assert.equal(await page.locator('.doc-copies').inputValue(), '1');
     await editorButton('data-inspector-close').click();

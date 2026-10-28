@@ -1,0 +1,94 @@
+import {afterEach, describe, expect, it, vi} from 'vitest';
+import fs from 'node:fs';
+import {JSDOM} from 'jsdom';
+
+const source = fs.readFileSync(new URL('../public/js/doc-rulers.js', import.meta.url), 'utf8');
+const model = new Function('module', source + '; return module.exports;')({exports:{}});
+const windows:JSDOM[] = [];
+afterEach(() => windows.splice(0).forEach(dom => dom.window.close()));
+
+describe('document ruler measurements', () => {
+  it('keeps physical positions consistent across units and content origins', () => {
+    const mm = model.ticks(210, 96 / 25.4, 'mm');
+    expect(mm.find((tick:any) => tick.value === 50).mm).toBe(50);
+    const cm = model.ticks(210, 96 / 25.4, 'cm', 14);
+    expect(cm.find((tick:any) => tick.value === 5).mm).toBe(64);
+    expect(cm.some((tick:any) => tick.value < 0)).toBe(true);
+    const inch = model.ticks(210, 96 / 25.4, 'in');
+    expect(inch.find((tick:any) => tick.value === 1).mm).toBeCloseTo(25.4);
+  });
+  it('draws far-scrolled custom pages without truncating their ruler', () => {
+    const ticks = model.ticks(2000, 96 / 25.4 * 4, 'mm', 0, 1800, 1900);
+    expect(ticks.length).toBeLessThan(1000);
+    expect(ticks[0].mm).toBeGreaterThanOrEqual(1800);
+    expect(ticks.at(-1).mm).toBe(1900);
+    expect(model.ticks(210, 0)).toEqual([]);
+    expect(model.ticks(Infinity, 1)).toEqual([]);
+  });
+  it('updates pointer/caret positions without writing to the page and releases its listeners', async () => {
+    const dom = new JSDOM('<div id="canvas"><div id="surface" contenteditable="true" tabindex="0"><p>Text</p></div></div>', {runScripts:'dangerously',pretendToBeVisual:true});
+    windows.push(dom); const w = dom.window as any, doc = w.document;
+    w.eval(source); const canvas = doc.getElementById('canvas'), surface = doc.getElementById('surface');
+    Object.defineProperties(canvas,{clientWidth:{value:600},clientHeight:{value:400}});
+    canvas.getBoundingClientRect=()=>({left:100,top:80,right:700,bottom:480,width:600,height:400});
+    surface.getBoundingClientRect=()=>({left:140,top:100,right:934,bottom:1223,width:794,height:1123});
+    const original = surface.innerHTML, openSettings = vi.fn();
+    const rulers=w.DocRulers.mount(canvas,surface,{readPage:()=>({widthMm:210,heightMm:297,marginMm:14}),openSettings});
+    const scale=794/210, wait=()=>new Promise(resolve=>setTimeout(resolve,35));
+    surface.dispatchEvent(new w.MouseEvent('pointermove',{clientX:140+50*scale,clientY:100+70*scale}));await wait();
+    expect(Number(doc.querySelector('.doc-ruler-x').dataset.rulerPosition)).toBeCloseTo(50);
+    expect(Number(doc.querySelector('.doc-ruler-y').dataset.rulerPosition)).toBeCloseTo(70);
+    rulers.setOptions({show:true,cursor:true,origin:'content',unit:'in'});await wait();
+    expect(Number(doc.querySelector('.doc-ruler-x').dataset.rulerPosition)).toBeCloseTo(36);
+    expect(doc.querySelector('.doc-ruler-corner').textContent).toBe('in');
+    surface.focus();w.Range.prototype.getClientRects=()=>[{left:200,top:160,height:18}];
+    w.getSelection().setBaseAndExtent(surface.querySelector('p').firstChild,2,surface.querySelector('p').firstChild,2);
+    surface.dispatchEvent(new w.Event('keyup'));await wait();
+    expect(Number(doc.querySelector('.doc-ruler-x').dataset.rulerPosition)).toBeCloseTo(60/scale-14);
+    const p=surface.querySelector('p');w.Range.prototype.getClientRects=function(){return this.startContainer.nodeType===3?[{left:200,top:160,height:18}]:[];};
+    w.getSelection().setBaseAndExtent(p,1,p,1);surface.dispatchEvent(new w.Event('keyup'));await wait();
+    expect(Number(doc.querySelector('.doc-ruler-x').dataset.rulerPosition)).toBeCloseTo(60/scale-14);
+    rulers.setOptions({show:true,cursor:false});await wait();expect(doc.querySelectorAll('.doc-ruler-marker[visibility=visible]')).toHaveLength(0);
+    rulers.setOptions({show:true,cursor:true,origin:'content',unit:'in'});await wait();
+    expect(surface.innerHTML).toBe(original);
+    doc.querySelector('.doc-ruler-corner').click();expect(openSettings).toHaveBeenCalledOnce();
+    rulers.setMode('pages');expect(rulers.frame.style.display).toBe('none');rulers.setMode('visual');
+    rulers.setOptions({show:false});expect(rulers.frame.dataset.rulers).toBe('false');
+    rulers.destroy();surface.dispatchEvent(new w.Event('keyup'));await wait();
+    expect(doc.querySelector('.doc-ruler-frame')).toBeNull();expect(canvas.parentElement).toBe(doc.body);
+    expect(surface.innerHTML).toBe(original);
+  });
+  it('stores ruler preferences without creating document changes or undo entries', async () => {
+    const dom = new JSDOM('<div id="view"></div><div id="modal-root"></div><div id="toasts"></div>',{url:'https://studio.test',runScripts:'dangerously',pretendToBeVisual:true});
+    windows.push(dom);const w=dom.window as any,doc=w.document;
+    w.eval(fs.readFileSync(new URL('../public/js/ui.js',import.meta.url),'utf8')+';window.UI=UI;');
+    w.UI.confirmDialog=vi.fn(async()=>true);w.document.execCommand=vi.fn(()=>true);w.document.queryCommandState=vi.fn(()=>false);
+    w.eval(source);w.eval(fs.readFileSync(new URL('../public/js/doc-editor.js',import.meta.url),'utf8'));
+    const save=vi.fn((_value:any)=>true),ed=w.DocEditor.open({body:'<p>Document text</p>',name:'Rulers',getVariables:()=>[],onSave:save});
+    const before=w.DocEditor.serializeEditor(doc.querySelector('.doc-surface'));
+    doc.querySelector('[data-ruler-settings]').click();doc.querySelector('[data-pref=rulerUnit]').value='cm';doc.querySelector('[data-pref=rulers]').checked=false;doc.querySelector('.modal-foot [data-confirm]').click();
+    expect(JSON.parse(w.localStorage.getItem('doc-editor-preferences-v1'))).toMatchObject({rulers:false,rulerUnit:'cm'});
+    expect(doc.querySelector('.doc-ruler-frame').dataset.rulers).toBe('false');expect(doc.querySelector('[data-ruler-toggle]').checked).toBe(false);
+    expect(w.DocEditor.serializeEditor(doc.querySelector('.doc-surface'))).toBe(before);expect(ed.commands.state('edit.undo').enabled).toBe(false);
+    doc.querySelector('[data-save]').click();await new Promise(resolve=>setTimeout(resolve,0));
+    expect(save.mock.calls[0]![0].body).not.toContain('doc-ruler');
+    await ed.close(true);expect(doc.querySelector('.doc-ruler-frame')).toBeNull();
+    const reopened=w.DocEditor.open({body:'<p>Document text</p>',getVariables:()=>[]});
+    expect(doc.querySelector('.doc-ruler-corner').textContent).toBe('cm');expect(doc.querySelector('.doc-ruler-frame').dataset.rulers).toBe('false');await reopened.close(true);
+  });
+  it('measures the most visible design page when the caret is scrolled offscreen', async () => {
+    const dom=new JSDOM('<div id="canvas"><div id="surface" tabindex="0"><div data-doc-design-page="a"><p>First</p></div><div data-doc-design-page="b"><p>Second</p></div><div data-doc-design-page="c"><p>Third</p></div></div></div>',{runScripts:'dangerously',pretendToBeVisual:true});
+    windows.push(dom);const w=dom.window as any,doc=w.document;w.eval(source);
+    const canvas=doc.getElementById('canvas'),surface=doc.getElementById('surface'),scale=794/210;
+    Object.defineProperties(canvas,{clientWidth:{value:600},clientHeight:{value:800}});
+    canvas.getBoundingClientRect=()=>({left:100,top:200,right:700,bottom:1000,width:600,height:800});
+    surface.getBoundingClientRect=()=>({left:140,top:-1882,right:934,bottom:1275,width:794,height:3157});
+    [...surface.children].forEach((page:any,i:number)=>page.getBoundingClientRect=()=>({left:193,top:-1829+i*1017,right:881,bottom:-812+i*1017,width:688,height:1017}));
+    surface.focus();w.Range.prototype.getClientRects=()=>[{left:193,top:-1800,height:18}];const text=surface.querySelector('p').firstChild;w.getSelection().setBaseAndExtent(text,1,text,1);
+    const rulers=w.DocRulers.mount(canvas,surface,{readPage:()=>({widthMm:210,heightMm:297,marginMm:14}),openSettings:()=>{}});
+    await new Promise(resolve=>setTimeout(resolve,35));
+    expect(Number(doc.querySelector('.doc-ruler-y').dataset.rulerOffset)).toBeCloseTo(205-14*scale-200);
+    expect(doc.querySelectorAll('.doc-ruler-y .doc-ruler-number').length).toBeGreaterThan(0);
+    rulers.destroy();
+  });
+});

@@ -1032,7 +1032,8 @@ function layoutPanelHTML() {
       <option value="4">400%</option>
     </select>
     <button type="button" data-zoom="in" title="Zoom in (Ctrl +)">+</button>`);
-  return pageSetup + groupHTML('Printing', `<button type="button" data-open-panel="Print" title="Configure a proportional print grid in the sidebar">${docIcon('table')}Print grid…</button>`) + `<div data-print-tools hidden>${copies}${spacing}</div><div data-zoom-tools hidden>${zoom}</div>`;
+  const rulerTools = groupHTML('View', `<label class="doc-check"><input type="checkbox" data-ruler-toggle checked>Rulers</label><button type="button" data-ruler-settings title="Ruler settings" aria-label="Ruler settings">${docIcon('settings')}</button>`);
+  return pageSetup + rulerTools + groupHTML('Printing', `<button type="button" data-open-panel="Print" title="Configure a proportional print grid in the sidebar">${docIcon('table')}Print grid…</button>`) + `<div data-print-tools hidden>${copies}${spacing}</div><div data-zoom-tools hidden>${zoom}</div>`;
 }
 
 function tablePanelHTML() {
@@ -3289,15 +3290,24 @@ function open(opts = {}) {
   const nameInp = fs.querySelector('.doc-fs-name');
   const typeSel = fs.querySelector('.doc-fs-type');
   const periodInp = fs.querySelector('.doc-fs-period');
-  let mode = 'visual';
+  let mode = 'visual', rulers = null;
   const preferenceKey = 'doc-editor-preferences-v1';
-  const preferenceDefaults = { spellcheck: true, wheelZoom: true, compactRibbon: false, save: 's', find: 'f', preview: 'shift+p' };
+  const preferenceDefaults = { spellcheck: true, wheelZoom: true, compactRibbon: false, rulers: true, rulerCursor: true, rulerUnit: 'mm', rulerOrigin: 'page', save: 's', find: 'f', preview: 'shift+p' };
   let preferences = { ...preferenceDefaults };
   try { const saved = JSON.parse(localStorage.getItem(preferenceKey) || '{}');
-    for (const key of ['spellcheck','wheelZoom','compactRibbon']) if(typeof saved[key]==='boolean') preferences[key]=saved[key];
+    for (const key of ['spellcheck','wheelZoom','compactRibbon','rulers','rulerCursor']) if(typeof saved[key]==='boolean') preferences[key]=saved[key];
+    if(['mm','cm','in'].includes(saved.rulerUnit))preferences.rulerUnit=saved.rulerUnit;
+    if(['page','content'].includes(saved.rulerOrigin))preferences.rulerOrigin=saved.rulerOrigin;
     for (const key of ['save','find','preview']) if(['s','f','shift+s','shift+f','shift+p','shift+k','off'].includes(saved[key])) preferences[key]=saved[key];
   } catch { /* Defaults work when browser storage is unavailable. */ }
-  function applyPreferences() { surface.spellcheck=preferences.spellcheck; setRibbonCollapsed(preferences.compactRibbon);
+  function rulerOptions(){return {show:preferences.rulers,cursor:preferences.rulerCursor,unit:preferences.rulerUnit,origin:preferences.rulerOrigin};}
+  function applyRulerPreferences(){rulers?.setOptions(rulerOptions());fs.querySelector('[data-ruler-toggle]').checked=preferences.rulers;}
+  function storePreferences(){try{localStorage.setItem(preferenceKey,JSON.stringify(preferences));}catch{UI.toast('Preferences applied for this session. Browser storage is unavailable.');}}
+  function rulerSettingsHTML(){return `<h3>Rulers</h3><label class="doc-check"><input type="checkbox" data-pref="rulers" ${preferences.rulers?'checked':''}>Show top and left rulers</label><label class="doc-check"><input type="checkbox" data-pref="rulerCursor" ${preferences.rulerCursor?'checked':''}>Show mouse and text-caret position</label><div class="field-row"><label>Ruler units<select data-pref="rulerUnit">${[['mm','Millimeters (mm)'],['cm','Centimeters (cm)'],['in','Inches (in)']].map(([value,label])=>`<option value="${value}" ${preferences.rulerUnit===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Zero point<select data-pref="rulerOrigin"><option value="page" ${preferences.rulerOrigin==='page'?'selected':''}>Page edge</option><option value="content" ${preferences.rulerOrigin==='content'?'selected':''}>Text area (inside margins)</option></select></label></div><p class="muted">Shaded bands show the page margins. These browser preferences do not change document dimensions or printed output.</p>`;}
+  function openRulerSettings(){const bookmark=captureEditorSelection(surface);UI.modal({title:'Ruler settings',bodyHTML:rulerSettingsHTML(),confirmText:'Apply',onConfirm:ov=>{for(const key of ['rulers','rulerCursor','rulerUnit','rulerOrigin']){const input=ov.querySelector('[data-pref='+key+']');preferences[key]=input.type==='checkbox'?input.checked:input.value;}applyRulerPreferences();storePreferences();},onClose:()=>{if(bookmark)restoreEditorSelection(surface,bookmark);rulers?.update();}});}
+  fs.querySelector('[data-ruler-settings]').addEventListener('click',openRulerSettings);
+  fs.querySelector('[data-ruler-toggle]').addEventListener('change',e=>{preferences.rulers=e.target.checked;applyRulerPreferences();storePreferences();});
+  function applyPreferences() { applyRulerPreferences();surface.spellcheck=preferences.spellcheck; setRibbonCollapsed(preferences.compactRibbon);
     fs.querySelector('[data-save]').title = shortcutLabel(preferences.save);
     fs.querySelector('.doc-workspace-hint').textContent = 'Select an object to move or resize · Save: '+shortcutLabel(preferences.save);
   }
@@ -3307,11 +3317,11 @@ function open(opts = {}) {
   function onDocumentDetails(e) { if(fs.isConnected && e.target.closest('[data-document-details]')) openDocumentDetails(); }
   fs.querySelector('[data-details]').addEventListener('click',()=>{
     const shortcuts = ['s','f','shift+s','shift+f','shift+p','shift+k','off'];
-    const body = `<p class="muted">Preferences apply to this browser across templates. Document details are under File; page and print settings are under Layout.</p><h3>Editing and workspace</h3>`+[['spellcheck','Check spelling'],['wheelZoom','Ctrl / ⌘ + scroll zooms the page'],['compactRibbon','Start with the ribbon collapsed']].map(([key,label])=>`<label class="doc-check"><input type="checkbox" data-pref="${key}" ${preferences[key]?'checked':''}> ${label}</label>`).join('')+`<h3>Keyboard shortcuts</h3><p class="muted">Choose distinct shortcuts. Ctrl on Windows / Linux, ⌘ on Mac. Button only disables that shortcut.</p>`+[['save','Save template'],['find','Find and replace'],['preview','Preview data']].map(([key,label])=>`<label>${label}<select data-pref="${key}">${shortcuts.map(v=>`<option value="${v}" ${preferences[key]===v?'selected':''}>${shortcutLabel(v)}</option>`).join('')}</select></label>`).join('')+`<p class="muted">Standard shortcuts: Ctrl / ⌘ B, I, U for formatting; Z to undo; Shift Z or Y to redo; +, − and 0 for zoom. Escape closes the active tool first.</p><button type="button" class="btn secondary" data-reset-preferences>Restore defaults</button>`;
+    const body = `<p class="muted">Preferences apply to this browser across templates. Document details are under File; page and print settings are under Layout.</p><h3>Editing and workspace</h3>`+[['spellcheck','Check spelling'],['wheelZoom','Ctrl / ⌘ + scroll zooms the page'],['compactRibbon','Start with the ribbon collapsed']].map(([key,label])=>`<label class="doc-check"><input type="checkbox" data-pref="${key}" ${preferences[key]?'checked':''}> ${label}</label>`).join('')+rulerSettingsHTML()+`<h3>Keyboard shortcuts</h3><p class="muted">Choose distinct shortcuts. Ctrl on Windows / Linux, ⌘ on Mac. Button only disables that shortcut.</p>`+[['save','Save template'],['find','Find and replace'],['preview','Preview data']].map(([key,label])=>`<label>${label}<select data-pref="${key}">${shortcuts.map(v=>`<option value="${v}" ${preferences[key]===v?'selected':''}>${shortcutLabel(v)}</option>`).join('')}</select></label>`).join('')+`<p class="muted">Standard shortcuts: Ctrl / ⌘ B, I, U for formatting; Z to undo; Shift Z or Y to redo; +, − and 0 for zoom. Escape closes the active tool first.</p><button type="button" class="btn secondary" data-reset-preferences>Restore defaults</button>`;
     const modal=UI.modal({title:'Editor settings',confirmText:'Apply',bodyHTML:body,onConfirm:(ov,showErr)=>{
       const next={}; for(const key of Object.keys(preferenceDefaults)){const el=ov.querySelector('[data-pref="'+key+'"]');next[key]=el.type==='checkbox'?el.checked:el.value;}
       const keys=[next.save,next.find,next.preview].filter(v=>v!=='off');if(new Set(keys).size!==keys.length){showErr('Choose a different shortcut for each action.');return false;}
-      preferences=next;applyPreferences();try{localStorage.setItem(preferenceKey,JSON.stringify(preferences));}catch{UI.toast('Preferences applied for this session. Browser storage is unavailable.');}
+      preferences=next;applyPreferences();storePreferences();
     }});
     modal.overlay.querySelector('[data-reset-preferences]').onclick=()=>{for(const [key,value] of Object.entries(preferenceDefaults)){const el=modal.overlay.querySelector('[data-pref="'+key+'"]');if(el.type==='checkbox')el.checked=value;else el.value=value;}};
   });
@@ -3712,6 +3722,7 @@ function open(opts = {}) {
     zoomWrap.style.width = Math.round(w * z) + 'px';
     zoomWrap.style.height = Math.round(h * z) + 'px';
     zoomWrap.style.setProperty('--zoom', String(z));
+    rulers?.update();
     const page=currentPageMm(),[pageW,pageH]=pageDims(page.widthMm,page.heightMm);zoomWrap.querySelectorAll('[data-page-resize]').forEach(handle=>{handle.style.left=(handle.dataset.pageResize.includes('e')?pageW*z:0)+'px';handle.style.top=(handle.dataset.pageResize.includes('s')?pageH*z:0)+'px';});
   }
   function syncZoomSel() {
@@ -3902,8 +3913,8 @@ function open(opts = {}) {
     if (next === mode) return;
     if(next==='pages'){
       if(mode==='code')setMode('visual');
-      if(!pageView){pageView=document.createElement('div');pageView.className='doc-pageview';pageView.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column';pageView.innerHTML='<div style="padding:10px;background:var(--surface,#fff);font-size:12px" data-pages-status>Measuring pages…</div><iframe title="Measured document pages" sandbox="allow-same-origin allow-modals" style="flex:1;width:100%;border:0;background:#eef0f3"></iframe>';canvas.after(pageView);}
-      pageView.style.display='flex';canvas.parentElement.style.display='';canvas.style.display='none';tabsEl.style.display='none';Object.values(panels).forEach(p=>p.style.display='none');mode='pages';fs.dataset.editorMode='pages';fs.querySelector('[data-find]').disabled=true;fs.querySelectorAll('[data-mode]').forEach(b=>{b.classList.toggle('active',b.dataset.mode===next);if(b.closest('.doc-modes'))b.setAttribute('aria-pressed',String(b.dataset.mode===next));});studio?.openPanel('Print');refreshPreview();return;
+      if(!pageView){pageView=document.createElement('div');pageView.className='doc-pageview';pageView.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column';pageView.innerHTML='<div style="padding:10px;background:var(--surface,#fff);font-size:12px" data-pages-status>Measuring pages…</div><iframe title="Measured document pages" sandbox="allow-same-origin allow-modals" style="flex:1;width:100%;border:0;background:#eef0f3"></iframe>';(rulers?.frame || canvas).after(pageView);}
+      pageView.style.display='flex';fs.querySelector('.doc-workspace').style.display='';canvas.style.display='none';tabsEl.style.display='none';Object.values(panels).forEach(p=>p.style.display='none');mode='pages';rulers?.setMode(mode);fs.dataset.editorMode='pages';fs.querySelector('[data-find]').disabled=true;fs.querySelectorAll('[data-mode]').forEach(b=>{b.classList.toggle('active',b.dataset.mode===next);if(b.closest('.doc-modes'))b.setAttribute('aria-pressed',String(b.dataset.mode===next));});studio?.openPanel('Print');refreshPreview();return;
     }
     if(pageView){pageView.remove();pageView=null;}
 
@@ -3912,17 +3923,17 @@ function open(opts = {}) {
       const text = serializeEditor(surface);
       codeContainer.style.display = '';
       if (!setCode(text)) { codeContainer.style.display = 'none'; return; }
-      canvas.parentElement.style.display = 'none'; canvas.style.display = 'none'; tabsEl.style.display = 'none';
+      fs.querySelector('.doc-workspace').style.display = 'none'; canvas.style.display = 'none'; tabsEl.style.display = 'none';
       Object.values(panels).forEach((p) => { p.style.display = 'none'; });
       if (cmEditor) cmEditor.focus();
     } else {
       if(mode==='code'){surface.innerHTML = bodyToEditorHtml(getCode());wired.normalizeFloats();}
-      codeContainer.style.display = 'none'; canvas.parentElement.style.display = ''; canvas.style.display = ''; tabsEl.style.display = '';
+      codeContainer.style.display = 'none'; fs.querySelector('.doc-workspace').style.display = ''; canvas.style.display = ''; tabsEl.style.display = '';
       switchTab(activeTab);
       applyZoom(); // content height may have changed → resize the zoom sizer
       if (history) history.record(); // the code-mode result becomes an undo step
     }
-    mode = next;fs.dataset.editorMode=next;fs.querySelector('[data-find]').disabled=next!=='visual';
+    mode = next;rulers?.setMode(mode);fs.dataset.editorMode=next;fs.querySelector('[data-find]').disabled=next!=='visual';
     fs.querySelectorAll('[data-mode]').forEach((b) => {b.classList.toggle('active', b.dataset.mode === next);if(b.closest('.doc-modes'))b.setAttribute('aria-pressed',String(b.dataset.mode===next));});
     refreshPreview();
   }
@@ -3936,6 +3947,7 @@ function open(opts = {}) {
     window.removeEventListener('beforeunload', onBeforeUnload);
     if (shared) shared.close();
     if (studio) studio.close();
+    rulers?.destroy();
     if (wired && wired.teardown) wired.teardown();
     if (history) history.cancel();
     if (cmEditor) cmEditor.destroy();
@@ -4059,6 +4071,7 @@ function open(opts = {}) {
       insert:html=>{wired.insertHtml(bodyToEditorHtml(html));wired.normalizeFloats();}
     });studio.render();const sharedStatus=fs.querySelector('.doc-shared-status');if(sharedStatus)fs.querySelector('.doc-statusbar').append(sharedStatus);
   }
+  if(window.DocRulers){rulers=window.DocRulers.mount(canvas,surface,{readPage:()=>({...currentPageMm(),marginMm:Number(marginInp.value)||0}),options:rulerOptions(),openSettings:openRulerSettings});applyZoom();}
   refreshLinkedFormCatalog();
   surface.focus();
   return { close, commands: wired.commands, _history: history }; // _history exposed for tests (undo/redo without waiting on the debounce)

@@ -1135,6 +1135,14 @@ Insert → Variable and sidebar Insert variable → shared variableDialog → ex
 
 Single chip plus whitespace → direct range insertion of the complete fragment → caret after the trailing text node → existing command history/change. Other HTML retains its existing adapter; no catalog/permission/state duplication is introduced.
 
+Workspace measurement (28 October 2026): open editor → mount rulers around the existing
+canvas → read current page dimensions/margins and displayed geometry → render ticks/margin
+bands → pointer or text-caret movement updates indicators. Zoom, scroll, resizing and active
+design pages refresh that same view. Personal ruler preferences persist in the existing
+browser settings key; this path never publishes document edits or creates Undo steps.
+Source and print modes hide the ruler workspace; normal editing restores it. Closing the
+editor disconnects measurement observers and event listeners.
+
 ### Mobile warehouse acceptance/allocation recovery (2026-10-15)
 
 Release queue → To accept / Allocating / Ready / Blocked → ship-from review → exact

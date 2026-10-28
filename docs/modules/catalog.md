@@ -1306,6 +1306,14 @@ Insert includes a quick Variable button in a Fields group. It and the persistent
 
 Variable chips with trailing whitespace now insert as a DOM fragment through the existing atomic command adapter, keeping them inside the selected paragraph at its end. The shared fix applies to both picker launchers and preserves Undo.
 
+Workspace rulers (`public/js/doc-rulers.js`, working) add top/left measurement strips
+outside the authored surface. They use live page geometry for zoom, scroll, custom sizes
+and design pages; pointer/text-caret indicators update on animation frames with cached ticks.
+Layout → View toggles rulers and opens settings; the unit corner and Editor settings share
+browser-local visibility, units (mm/cm/in), origin (page/text area) and cursor preferences.
+Rulers never enter canonical HTML, template history, shared snapshots or print output.
+Tests: doc-rulers plus the ruler/source/resize/multipage scenarios in test:editor:ux.
+
 ### Mobile release acceptance/allocation recovery (2026-10-15)
 
 `inventory/release-actions.js` uses scoped IndexedDB action records for exact

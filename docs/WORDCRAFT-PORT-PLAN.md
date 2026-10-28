@@ -383,3 +383,10 @@ Direct header-edge selection and Inspect controls expose border removal, width, 
 
 ### Insert variable shortcut — 14 October 2026
 The Insert ribbon has a quick Variable action using the existing picker/command and caret bookmark. The full bank remains in the sidebar. Keyboard insertion at the body caret and Undo are checked in Playwright; this does not advance engine phase 2 slice 5.
+
+### Workspace rulers — 28 October 2026
+
+Top/left rulers, shaded margins and pointer/caret indicators use the existing displayed
+page geometry. Browser preferences cover visibility, units and origin; no document-model
+or persistence migration is introduced. See `docs/reviews/editor-rulers-2026-10-28.md` for
+implementation and verification. The engine's phase 2 slice 5 remains pending.
