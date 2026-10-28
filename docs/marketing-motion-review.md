@@ -1,3 +1,5 @@
+> Historical implementation review. Superseded by the approved OTOM theme/showcase rollout on 2026-10-28. The native `product-showcase.js` and CSS were replaced by the reviewed, pinned Swiper controller (`website/showcase.entry.js`). Current runtime verification is in `tests/website-showcase.browser.mjs`; pinned research and coverage are in `docs/design/otom-theme-review.json`. The inquiry notification fixes from the live branch remain unchanged.
+
 # Product showcase motion review
 
 ## Deeper work within the requested scope

@@ -1,3 +1,4 @@
+if(process.argv.includes('--review=otom-theme')){const helpers=await import('./ui-scratch/build.mjs');await(await import('./otom-theme/preview.mjs')).generate(helpers);process.exit(0);}
 // Rebuilds only the owned, ignored work/ui-scratch directory. UI code is copied
 // verbatim; records are captured from an isolated real backend, then replayed offline.
 import fs from 'node:fs';

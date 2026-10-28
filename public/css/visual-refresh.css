@@ -1,19 +1,19 @@
 /* Shared visual language. Screen-only so printed records keep their plain styling. */
 :root, [data-theme='light'] {
-  --accent-end: #5864db;
-  --ambient: #e9efff;
-  --ambient-secondary: #e7f5f5;
-  --surface-highlight: #fbfcff;
-  --focus-ring: #537be0;
-  --card-shadow: 0 3px 12px rgb(30 53 94 / 5%), 0 12px 32px rgb(30 53 94 / 3%);
+  --accent-end: var(--otom-primary);
+  --ambient: var(--otom-bg);
+  --ambient-secondary: var(--otom-bg);
+  --surface-highlight: var(--otom-surface-raised);
+  --focus-ring: var(--otom-focus);
+  --card-shadow: var(--otom-shadow-sm);
 }
 [data-theme='dark'] {
-  --accent-end: #b4a1fa;
-  --ambient: #22203b;
-  --ambient-secondary: #182a32;
-  --surface-highlight: #242135;
-  --focus-ring: #b4bfff;
-  --card-shadow: 0 4px 18px rgb(0 0 0 / 18%), 0 12px 32px rgb(0 0 0 / 12%);
+  --accent-end: var(--otom-primary);
+  --ambient: var(--otom-bg);
+  --ambient-secondary: var(--otom-bg);
+  --surface-highlight: var(--otom-surface-raised);
+  --focus-ring: var(--otom-focus);
+  --card-shadow: var(--otom-shadow-sm);
 }
 @media screen {
   .main, .login-wrap {
@@ -453,3 +453,20 @@
 @media (max-width: 700px) {
   .account-details-grid { grid-template-columns: minmax(0, 1fr) !important; }
 }
+
+/* OTOM uses working surfaces, not decorative ambient gradients. */
+@media screen{
+ .main,.login-wrap{background:var(--bg)}
+ .topnav,.panel-head,.stat-card,.login-card,.hr-hero,.hr-module-card{background:var(--surface)}
+ .tree,.rail{background:var(--sidebar)}
+ .brand .mark,.login-brand .mark,.btn:not(.secondary):not(.danger){background:var(--accent)}
+ .btn:not(.secondary):not(.danger):hover:not(:disabled){background:var(--accent-hover);filter:none}
+ .stat-card,.panel,.form-card{box-shadow:var(--otom-shadow-sm)}
+ .primary-item.active,.tree-leaf.active,.subtab.active{background:var(--accent-weak);color:var(--text)}
+ .table-wrap,table{border-color:var(--border)}
+ :where(input,select,textarea):not([type=checkbox]):not([type=radio]){border-color:var(--border-strong)}
+ :where(button,a,input,select,textarea,[tabindex]):focus-visible{outline:3px solid var(--otom-focus);outline-offset:3px}
+ .pill.info,.badge.info{background:var(--otom-info-bg);color:var(--otom-info)}
+}
+@media(prefers-reduced-motion:reduce){body,.btn{transition:none!important}}
+.tk-roster-table tr.tk-group-row span{opacity:1;color:var(--text-muted)}

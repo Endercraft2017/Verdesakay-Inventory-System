@@ -52,15 +52,6 @@
     button.addEventListener('click', function () { suggestBrief(button.dataset.operationsBrief); });
   });
 
-  // The reusable product-showcase module owns screenshot motion and selection.
-  // Its event leaves this page's inquiry wiring separate from the presentation.
-  document.querySelectorAll('[data-product-showcase]').forEach(function (tour) {
-    var activeBrief = tour.querySelector('[data-tour-screen][aria-pressed="true"]');
-    var brief = activeBrief ? activeBrief.dataset.tourBrief : '';
-    tour.addEventListener('otom:screenchange', function (event) { brief = event.detail.brief; });
-    var inquiry = tour.querySelector('[data-tour-inquiry]');
-    if (inquiry) inquiry.addEventListener('click', function () { if (brief) suggestBrief(brief); });
-  });
   select(selected, false);
   controls.hidden = false;
   var optional = document.querySelector('.optional-scope');

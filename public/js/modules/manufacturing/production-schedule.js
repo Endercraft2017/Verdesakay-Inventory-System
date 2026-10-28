@@ -10,7 +10,7 @@ App.register('production-schedule', async (view) => {
 
   const ymd = (d) => d.toISOString().slice(0, 10);
   const monthLabel = (d) => d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  const STATUS_COLOR = { draft: '#94a3b8', released: '#2563eb', in_progress: '#0891b2', paused: '#d97706', completed: '#16a34a', cancelled: '#dc2626' };
+  const STATUS_COLOR = { draft: 'var(--text-muted)', released: 'var(--accent)', in_progress: 'var(--otom-info)', paused: 'var(--warn)', completed: 'var(--success)', cancelled: 'var(--danger)' };
 
   view.innerHTML = `
     <div class="topbar">
@@ -90,13 +90,13 @@ App.register('production-schedule', async (view) => {
           const on = shown.filter((j) => activeOn(j, dStr, todayStr));
           const load = on.filter((j) => OPEN.has(j.status)).reduce((s, j) => s + Math.max(0, j.remaining || 0), 0);
           const over = capacity > 0 && load > capacity;
-          return `<td style="vertical-align:top;border:1px solid var(--border);height:96px;padding:3px;${inMonth ? '' : 'opacity:.45;'}${dStr === todayStr ? 'outline:2px solid var(--accent,#2563eb);outline-offset:-2px;' : ''}">
+          return `<td style="vertical-align:top;border:1px solid var(--border);height:96px;padding:3px;${inMonth ? '' : 'opacity:.45;'}${dStr === todayStr ? 'outline:2px solid var(--accent,var(--accent));outline-offset:-2px;' : ''}">
             <div style="display:flex;justify-content:space-between;font-size:11px">
               <span>${day.getDate()}</span>
               ${load ? `<span class="badge-pill ${over ? 'low' : ''}" title="planned load">${load}</span>` : ''}
             </div>
             ${on.slice(0, 4).map((j) => `<div class="clickable" data-jo="${j.id}" title="${UI.esc(j.number + ' · ' + j.product_name + (j.team_name ? ' · ' + j.team_name : ''))}"
-                style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:3px solid ${STATUS_COLOR[j.status] || '#94a3b8'};padding-left:4px;margin-top:2px${j.overdue ? ';color:var(--danger,#dc2626);font-weight:600' : ''}">
+                style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:3px solid ${STATUS_COLOR[j.status] || 'var(--text-muted)'};padding-left:4px;margin-top:2px${j.overdue ? ';color:var(--danger,var(--danger));font-weight:600' : ''}">
                 ${UI.esc(j.number.replace('MO-', '#'))} ${UI.esc(j.product_name)}</div>`).join('')}
             ${on.length > 4 ? `<div class="muted" style="font-size:10px">+${on.length - 4} more</div>` : ''}
           </td>`;
