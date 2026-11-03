@@ -65,7 +65,8 @@ describe('hr', () => {
 
     const ot = bySlug('overtime_request');
     expect(ot).toBeDefined();
-    expect(ot.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'hours_estimate', 'reason', 'approved_hours', 'early_ot']);
+    expect(ot.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'hours_estimate', 'ot_timing', 'reason', 'approved_hours']);
+    expect(ot.fields.find((f: { key: string }) => f.key === 'ot_timing').options).toEqual(['OT', 'Early OT', 'Both']);
 
     const ut = bySlug('undertime_request');
     expect(ut).toBeDefined();
@@ -2546,6 +2547,47 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
     await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
       pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], require_ot_form: true,
     });
+  });
+
+  it('generates and explains combined early and after-shift OT from a linked request', async () => {
+    const previous = (await ctx.api.get('/api/hr/payroll-policy').set(hdr())).body;
+    try {
+      await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+        require_ot_form: true, ot_unit: '30min', ot_min_minutes: 0, ot_grace_minutes: 0,
+        max_ot_hours: 2, hours_basis: 'fixed', default_rest_days: [],
+      });
+      const shift = await ctx.api.post('/api/hr/shifts').set(hdr()).send({
+        name: 'OT Timing Test Shift', start_time: '09:00', end_time: '18:00', is_default: false,
+      });
+      const forms = await ctx.api.get('/api/form-definitions').set(hdr());
+      const otFormId = forms.body.find((f: { slug: string }) => f.slug === 'overtime_request').id;
+      const emp = await ctx.api.post('/api/hr/employees').set(hdr()).send({
+        employee_no: 'TEST-OT-TIMING', name: 'OT Timing Test Employee', daily_rate: 769,
+      });
+      const ot = await ctx.api.post('/api/form-records').set(hdr()).send({
+        form_def_id: otFormId, status: 'approved',
+        data: { employee_id: emp.body.id, employee_name: 'OT Timing Test Employee', work_date: '2026-10-16', ot_timing: 'Both', approved_hours: 3, reason: 'Driver coverage' },
+      });
+      expect(ot.status, JSON.stringify(ot.body)).toBe(201);
+      await approveRequestFixture(ot.body.id);
+      const period = await ctx.api.post('/api/hr/periods').set(hdr()).send({
+        label: 'OT Timing Test Cutoff', start_date: '2026-10-16', end_date: '2026-10-16',
+      });
+      await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+      await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+        employee_id: emp.body.id,
+        days: [{ work_date: '2026-10-16', time_in: '06:22', time_out: '19:00', shift_id: shift.body.id, form_record_id: ot.body.id }],
+      });
+      const generated = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'OT Timing Test Cutoff' });
+      expect(generated.status).toBe(201);
+      const slips = await ctx.api.get(`/api/form-definitions/${generated.body.form_id}/records`).query({ period: 'OT Timing Test Cutoff' }).set(hdr());
+      const slip = slips.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'OT Timing Test Employee');
+      expect(slip.data.ot_hours).toBe(3);
+      const detail = await ctx.api.get(`/api/hr/payroll/${slip.id}/detail`).set(hdr());
+      expect(detail.body.days[0]).toMatchObject({ ot_early_hours: 2.5, ot_after_hours: 0.5, ot_hours: 3 });
+    } finally {
+      await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send(previous);
+    }
   });
 
   it('GET /hr/linked-form-record-ids reports every form record consumed by an attendance day (so the picker can hide them)', async () => {

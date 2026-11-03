@@ -788,7 +788,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         <td>${detailDayTag(d) || '<span class="muted">—</span>'}</td>
         <td>${d.late_minutes ? `${d.late_minutes} min<div class="muted" style="font-size:11px">${detail.late_exempt ? 'exempt' : UI.money(d.late_pay)}</div>` : '—'}</td>
         <td>${d.undertime_minutes ? `${d.undertime_minutes} min<div class="muted" style="font-size:11px">${UI.money(-d.undertime_pay)}</div>` : '—'}</td>
-        <td>${d.ot_hours ? `${d.ot_hours.toFixed(2)} hr<div class="muted" style="font-size:11px">${UI.money(d.ot_pay)}</div>` : '—'}</td>
+        <td>${d.ot_hours ? `${d.ot_hours.toFixed(2)} hr<div class="muted" style="font-size:11px">${d.ot_early_hours ? `${d.ot_early_hours.toFixed(2)} early · ` : ''}${d.ot_after_hours ? `${d.ot_after_hours.toFixed(2)} after · ` : ''}${UI.money(d.ot_pay)}</div>` : '—'}</td>
         <td>${d.day_premium_pay ? UI.money(d.day_premium_pay) : '—'}</td>
         <td>${d.night_diff_pay ? UI.money(d.night_diff_pay) : '—'}</td>
       </tr>`).join('');
@@ -1670,7 +1670,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   }
 
   function renderFieldInput(field, data, employees) {
-    const val = data[field.key] ?? field.default ?? '';
+    const val = data[field.key] ?? (field.key === 'ot_timing' && (data.early_ot === true || data.early_ot === 'Yes') ? 'Both' : field.default ?? '');
     if(field.type==='line_items')return FormItems.render(field);
     if(field.type==='calculated')return `<div data-validation-field><label for="fr-field-${field.key}">${UI.esc(field.label)}${field.format==='currency'?' ('+UI.esc(field.currency||'PHP')+')':''}</label><input id="fr-field-${field.key}" data-field="${field.key}" type="number" step="any" readonly value="${UI.esc(String(val||0))}"><small class="muted">Calculated automatically</small></div>`;
     if(['reference','system'].includes(field.type))return FormConnections.render(field,val);

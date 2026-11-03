@@ -1901,14 +1901,12 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       { slug: 'halfday_request', label: 'Half Day', dateKey: 'date', fields: [
         { key: 'session', label: 'Session', type: 'select', options: ['Morning (AM)', 'Afternoon (PM)'], required: true },
       ] },
-      // OT itself needs no input — the form just AUTHORISES overtime; payroll computes the
-      // actual hours from the logged Time Out vs the shift end (rounded to the OT unit, capped
-      // by max_ot_hours). The modal shows that detected figure instead of asking for an
-      // estimate. approved_hours is the one optional exception: a per-day override of the
-      // policy cap for when it's been specifically approved higher than usual (e.g. "policy
-      // caps OT at 2h/day but the boss okayed 4h today") — read directly by the compute engine.
+      // OT timing selects the clocked intervals that payroll may credit. Approved hours
+      // raises their shared daily ceiling; it never invents unclocked work.
       { slug: 'overtime_request', label: 'Overtime', dateKey: 'work_date', fields: [
-        { key: 'approved_hours', label: 'Approved OT hours today (optional — overrides the cap above for just this day)', type: 'number' },
+        { key: 'ot_timing', label: 'OT timing', type: 'select', options: ['OT', 'Early OT', 'Both'], required: true },
+        { key: 'approved_hours', label: 'Approved hours ceiling (shared by both intervals)', type: 'number' },
+        { key: 'reason', label: 'Reason', type: 'text', required: true },
       ], detectOt: true },
       { slug: 'undertime_request', label: 'Undertime', dateKey: 'work_date', fields: [
         { key: 'with_pay', label: 'With pay?', type: 'select', options: ['Yes', 'No'], required: true },
@@ -2093,17 +2091,17 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       };
       const approved = Number(opts.approvedHours) > 0 ? Number(opts.approvedHours) * 60 : 0;
       const cap = policy.max_ot_hours != null ? Math.max(policy.max_ot_hours * 60, approved) : null;
-      const earlyRounded = opts.early && earlyRaw >= EARLY_OT_MIN_MINUTES ? credit(earlyRaw) : 0;
+      const timing = opts.timing || 'OT';
+      const earlyRounded = timing !== 'OT' && earlyRaw >= EARLY_OT_MIN_MINUTES ? credit(earlyRaw) : 0;
       const early = cap != null ? Math.min(earlyRounded, cap) : earlyRounded;
-      const lateRounded = credit(raw);
+      const lateRounded = timing === 'Early OT' ? 0 : credit(raw);
       const late = cap != null ? Math.min(lateRounded, cap - early) : lateRounded;
       const capped = early + late < earlyRounded + lateRounded;
       const hrs = (m) => (m % 60 ? (m / 60).toFixed(2) : String(m / 60));
       if (early + late <= 0) {
-        if (raw <= 0) return 'No time logged past the shift end — nothing to pay as OT.';
-        return `${raw} min past the shift end — not enough to count as OT under the OT rules (Policy Settings).`;
+        return 'No payable time for this OT timing under the recorded punches and OT policy.';
       }
-      const parts = early > 0 ? ` (${hrs(early)} h early + ${hrs(late)} h after the shift)` : '';
+      const parts = ` (${hrs(early)} h early + ${hrs(late)} h after the shift)`;
       return `≈ ${hrs(early + late)} h will be paid as OT${parts} — computed from the logged times${capped ? `, capped at ${hrs(cap)} h for the day` : ''}.`;
     }
 
@@ -2552,22 +2550,13 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 if (!t) { fieldsEl.innerHTML = ''; createBtn.disabled = true; return; }
                 createBtn.disabled = !App.hasPermission('forms.manage.hr');
                 if (createBtn.disabled) errEl.textContent = 'Creating HR forms requires HR form-management access.';
-                // Overtime: offer Early OT only when this day's time-in is 1 h+ before the shift
-                // start; the hint below re-computes as the tick / approved hours change.
-                const earlyMin = t.detectOt ? earlyMinutesFor(day) : 0;
-                const earlyHtml = earlyMin >= EARLY_OT_MIN_MINUTES
-                  ? `<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;flex-basis:100%;font-weight:normal">
-                      <input type="checkbox" id="mf-early-ot" style="width:auto" />
-                      Early OT — count the ${earlyMin % 60 ? (earlyMin / 60).toFixed(2) : earlyMin / 60} h before the shift start (timed in ${UI.esc(day.time_in)})
-                    </label>`
-                  : '';
                 const hintHtml = t.detectOt
-                  ? `<p class="muted" id="mf-ot-hint" style="font-size:12.5px;margin:2px 0;flex-basis:100%">${UI.esc(detectedOtText(day))}</p>${earlyHtml}`
+                  ? `<p class="muted" id="mf-ot-hint" style="font-size:12.5px;margin:2px 0;flex-basis:100%">${UI.esc(detectedOtText(day))}</p>`
                   : '';
                 fieldsEl.innerHTML = hintHtml + (t.slug === 'leave_request' ? LeaveDates.markup() : '') + t.fields.map((f) => {
                   const lbl = `<label style="font-size:12px">${UI.esc(f.label)}${f.required ? ' *' : ''}</label>`;
                   if (f.type === 'select' || f.type === 'employee') {
-                    return `<div>${lbl}<select data-mf="${f.key}"><option value="">—</option>${(f.options || []).map((o) => { const value = typeof o === 'object' ? o.value || o.id || o.label || o.name : o; const label = typeof o === 'object' ? o.label || o.name || value : o; return `<option value="${UI.esc(String(value))}">${UI.esc(String(label))}</option>`; }).join('')}</select></div>`;
+                    return `<div>${lbl}<select data-mf="${f.key}">${f.key === 'ot_timing' ? '' : '<option value="">—</option>'}${(f.options || []).map((o) => { const value = typeof o === 'object' ? o.value || o.id || o.label || o.name : o; const label = typeof o === 'object' ? o.label || o.name || value : o; return `<option value="${UI.esc(String(value))}">${UI.esc(String(label))}</option>`; }).join('')}</select></div>`;
                   }
                   if (f.type === 'textarea') return `<div style="flex-basis:100%">${lbl}<textarea data-mf="${f.key}" rows="3"></textarea></div>`;
                   if (f.type === 'checkbox') return `<div>${lbl}<input type="checkbox" data-mf="${f.key}" style="width:auto" /></div>`;
@@ -2577,14 +2566,14 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 leavePicker = t.slug === 'leave_request' ? LeaveDates.mount(fieldsEl, { data: { date_from: day.work_date, date_to: day.work_date }, preview: data => API.post('/hr/leave-preview', { employee_id: employeeId, data }) }) : null;
                 t.fields.forEach(f => { const el = fieldsEl.querySelector(`[data-mf="${f.key}"]`); if (el && f.default != null && f.default !== '') { if (el.type === 'checkbox') el.checked = f.default === true || f.default === 'Yes'; else el.value = f.default; } });
                 if (t.detectOt) {
-                  const earlyBox = fieldsEl.querySelector('#mf-early-ot');
+                  const timingSel = fieldsEl.querySelector('[data-mf="ot_timing"]');
                   const approvedInp = fieldsEl.querySelector('[data-mf="approved_hours"]');
                   const refreshHint = () => {
                     fieldsEl.querySelector('#mf-ot-hint').textContent = detectedOtText(day, {
-                      early: !!(earlyBox && earlyBox.checked), approvedHours: approvedInp ? approvedInp.value : '',
+                      timing: timingSel.value, approvedHours: approvedInp ? approvedInp.value : '',
                     });
                   };
-                  if (earlyBox) earlyBox.onchange = refreshHint;
+                  timingSel.onchange = refreshHint;
                   if (approvedInp) approvedInp.oninput = refreshHint;
                 }
               };
@@ -2610,9 +2599,6 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                   if (v && f.type === 'number' && !Number.isFinite(Number(v))) { errEl.textContent = `${f.label} must be a valid number.`; return; }
                   if (v) data[f.key] = f.type === 'number' ? Number(v) : v;
                 }
-                // Early OT tick (only rendered on a day timed in 1 h+ early) — read by payroll.
-                const earlyBox = ov2.querySelector('#mf-early-ot');
-                if (t.slug === 'overtime_request') data.early_ot = !!(earlyBox && earlyBox.checked);
                 // Leave: the payroll engine treats a leave day as paid only when with_pay==='Yes'
                 // — infer it from the leave type so a leave made here computes correctly.
                 if (t.slug === 'leave_request') data.with_pay = data.leave_type === 'Unpaid Leave' ? 'No' : (data.with_pay || 'Yes');

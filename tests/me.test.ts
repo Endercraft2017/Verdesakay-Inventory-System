@@ -78,6 +78,9 @@ describe('employee self-service', () => {
 
     const types = await ctx.api.get('/api/me/request-types').set({ Authorization: `Bearer ${a.token}` });
     expect(types.body.some((t: { slug: string }) => t.slug === 'leave_request')).toBe(true);
+    const overtime = types.body.find((t: { slug: string }) => t.slug === 'overtime_request');
+    expect(overtime.fields.find((f: { key: string }) => f.key === 'ot_timing')?.options).toEqual(['OT', 'Early OT', 'Both']);
+    expect(overtime.fields.some((f: { key: string }) => f.key === 'approved_hours' || f.key === 'early_ot')).toBe(false);
 
     await ctx.api.post('/api/form-records').set({ Authorization: `Bearer ${a.token}` })
       .send({ form_def_id: leaveId, data: { employee_name: a.name, reason: 'trip', date_from: '2026-06-01', date_to: '2026-06-01' } });

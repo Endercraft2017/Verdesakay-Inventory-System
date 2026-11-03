@@ -137,6 +137,8 @@ export interface DayBreakdown {
   late_minutes: number;
   late_pay: number;
   ot_hours: number;
+  ot_early_hours: number;
+  ot_after_hours: number;
   ot_pay: number;
   // Minutes charged as undertime (left before the expected end, lunch excluded, after rounding)
   // — the minutes behind undertime_pay. 0 when nothing was charged, including a day covered by
@@ -492,6 +494,12 @@ export function computeAttendanceForEmployee(
     const approvedOtHours = Number(formData('overtime_request')?.approved_hours);
     const dayMaxOtMin = policy.max_ot_hours == null ? null
       : Math.max(policy.max_ot_hours * 60, approvedOtHours > 0 ? approvedOtHours * 60 : 0);
+    const otData = formData('overtime_request');
+    // Older forms had only an Early OT checkbox: checked meant both intervals, while an
+    // unchecked or missing value meant ordinary after-shift OT. The three-way choice wins
+    // when present, without changing the meaning of existing approved requests.
+    const otTiming = otData?.ot_timing === 'OT' || otData?.ot_timing === 'Early OT' || otData?.ot_timing === 'Both'
+      ? otData.ot_timing : earlyOtTicked(otData?.early_ot) ? 'Both' : 'OT';
     const timeIn = toMinutes(day.time_in);
     const rawTimeOut = toMinutes(day.time_out);
     const lunchOutMin = toMinutes(day.lunch_out ?? null);
@@ -509,7 +517,7 @@ export function computeAttendanceForEmployee(
     // Per-day mirror of whatever the aggregate below adds — pushed to out.days at every exit
     // point of this iteration (there are several `continue`s), so it always reflects exactly
     // what happened to this specific day, never a separately-derived guess.
-    let lateMin = 0, latePay = 0, otHours = 0, otPay = 0, undertimePay = 0, dayPremium = 0;
+    let lateMin = 0, latePay = 0, otHours = 0, otEarlyHours = 0, otAfterHours = 0, otPay = 0, undertimePay = 0, dayPremium = 0;
     let undertimeDayPay = 0, nightDiffPay = 0, undertimeMin = 0;
     let status: DayBreakdown['status'] = 'worked';
     let belowMin = false;
@@ -525,7 +533,8 @@ export function computeAttendanceForEmployee(
     const pushDay = () => out.days.push({
       work_date: day.work_date, time_in: day.time_in, time_out: day.time_out,
       holiday: day.holiday ?? null, no_work: day.noWork ?? null, is_rest_day: !!day.isRestDay,
-      status, late_minutes: lateMin, late_pay: latePay, ot_hours: otHours, ot_pay: otPay,
+      status, late_minutes: lateMin, late_pay: latePay, ot_hours: otHours,
+      ot_early_hours: otEarlyHours, ot_after_hours: otAfterHours, ot_pay: otPay,
       undertime_minutes: undertimeMin, undertime_pay: undertimePay, undertime_day_pay: undertimeDayPay,
       night_diff_pay: nightDiffPay, day_premium_pay: dayPremium, below_minimum: belowMin, possible_half_day: possibleHalfDay,
       half_day_manual: halfDayManual,
@@ -789,10 +798,10 @@ export function computeAttendanceForEmployee(
       const lunchOverlapStart = Math.max(timeInRel, lunch.start);
       const lunchOverlapEnd = Math.min(timeOutRel, lunch.end);
       const lunchOverlap = policy.count_lunch_as_worked ? 0 : Math.max(0, lunchOverlapEnd - lunchOverlapStart);
-      const workedRaw = Math.max(0, rawWorkedMinutes - lunchOverlap);
       const normalSpan = Math.max(0, (shiftEnd - shiftStart) - (policy.count_lunch_as_worked ? 0 : policy.lunch_break_minutes));
 
-      const regularRaw = Math.min(workedRaw, normalSpan);
+      const shiftPresent = Math.max(0, Math.min(timeOutRel, shiftEnd) - Math.max(timeInRel, shiftStart));
+      const regularRaw = Math.max(0, Math.min(shiftPresent - lunchOverlap, normalSpan));
       const regularBlocked = roundDownToUnit(regularRaw, unitMinutesFor(policy.hours_basis_unit));
       out.days_worked += (regularBlocked / 60) / 8;
 
@@ -804,25 +813,28 @@ export function computeAttendanceForEmployee(
         lateMin = roundUpToUnit(lateRaw, unitMinutesFor(policy.late_unit));
       }
 
-      // Hours worked beyond the shift's own normal span — same authorization gate OT already
-      // uses (require_ot_form), same OT%/holiday-scaled rate, just measured from actual worked
-      // minutes instead of a fixed clock-out-vs-shift-end comparison. dayMaxOtMin (policy cap,
-      // or a linked Overtime Request's own approved_hours override — see above; null = no cap)
-      // caps how much of it is actually PAID — same as unauthorized OT, hours worked past the
-      // cap are simply uncompensated presence, not converted into undertime.
-      let otBlocked = 0;
-      const otRaw = workedRaw - normalSpan;
-      if (otRaw > 0 && (hasForm('overtime_request') || !policy.require_ot_form)) {
-        const otBlockedRaw = roundDownToUnit(otRaw, unitMinutesFor(policy.hours_basis_unit));
-        otBlocked = dayMaxOtMin != null ? Math.min(otBlockedRaw, dayMaxOtMin) : otBlockedRaw;
-        if (otBlocked > 0) {
-          otHours = otBlocked / 60;
-          out.ot_hours += otHours;
-          const dayMult = dayRateMultiplier(day.holiday, restDayPremium);
-          const pay = exemptOt ? 0 : otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
-          otPay = pay;
-          out.overtime_pay += pay;
-        }
+      // Classify pre-shift and after-shift work separately. Ordinary hourly pay covers only
+      // the scheduled interval, so an early arrival cannot silently become after-shift OT.
+      // Early OT still needs a linked form; unrequested after-shift OT follows the policy.
+      const earlyRaw = Math.max(0, Math.min(timeOutRel, shiftStart) - timeInRel);
+      const earlyCredit = hasForm('overtime_request') && otTiming !== 'OT' && earlyRaw >= EARLY_OT_MIN_MINUTES
+        ? otCreditMinutes(earlyRaw, policy) : 0;
+      const earlyBlocked = dayMaxOtMin == null ? earlyCredit : Math.min(earlyCredit, dayMaxOtMin);
+      const afterStart = Math.max(shiftEnd, timeInRel);
+      const afterRaw = Math.max(0, timeOutRel - afterStart);
+      const afterCredit = (hasForm('overtime_request') ? otTiming !== 'Early OT' : !policy.require_ot_form)
+        ? otCreditMinutes(afterRaw, policy) : 0;
+      const afterBlocked = dayMaxOtMin == null ? afterCredit : Math.min(afterCredit, Math.max(0, dayMaxOtMin - earlyBlocked));
+      const otBlocked = earlyBlocked + afterBlocked;
+      otEarlyHours = earlyBlocked / 60;
+      otAfterHours = afterBlocked / 60;
+      if (otBlocked > 0) {
+        otHours = otBlocked / 60;
+        out.ot_hours += otHours;
+        const dayMult = dayRateMultiplier(day.holiday, restDayPremium);
+        const pay = exemptOt ? 0 : otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
+        otPay = pay;
+        out.overtime_pay += pay;
       }
 
       // Night differential over the entire physically-present, lunch-excluded span (regular +
@@ -832,9 +844,11 @@ export function computeAttendanceForEmployee(
       // otBlocked) so a rounding-down tail or an OT-cap-truncated tail never earns night diff it
       // wasn't paid for.
       if (policy.night_diff_enabled) {
-        const rawNightMin = nightMinutesRel(timeInRel, timeOutRel - timeInRel, nightStart, nightEnd)
+        const shiftNightMin = nightMinutesRel(Math.max(timeInRel, shiftStart), shiftPresent, nightStart, nightEnd)
           - (lunchOverlap > 0 ? nightMinutesRel(lunchOverlapStart, lunchOverlap, nightStart, nightEnd) : 0);
-        const paidNightMin = Math.max(0, Math.min(rawNightMin, regularBlocked + otBlocked));
+        const paidNightMin = Math.max(0, Math.min(shiftNightMin, regularBlocked))
+          + nightMinutesRel(shiftStart - earlyBlocked, earlyBlocked, nightStart, nightEnd)
+          + nightMinutesRel(afterStart, afterBlocked, nightStart, nightEnd);
         if (paidNightMin > 0) {
           nightDiffPay = (paidNightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
           out.night_diff_pay += nightDiffPay;
@@ -995,8 +1009,8 @@ export function computeAttendanceForEmployee(
     // automatic, even when the policy doesn't require an OT form. It takes the daily cap first;
     // the after-shift OT below gets what's left (2 h cap, 1 h early → at most 1 h after).
     let earlyBlocked = 0;
-    const earlyRaw = effShiftStart - timeInRel;
-    if (hasForm('overtime_request') && earlyOtTicked(formData('overtime_request')?.early_ot) && earlyRaw >= EARLY_OT_MIN_MINUTES) {
+    const earlyRaw = Math.min(timeOutRel, effShiftStart) - timeInRel;
+    if (hasForm('overtime_request') && otTiming !== 'OT' && earlyRaw >= EARLY_OT_MIN_MINUTES) {
       const earlyBlockedRaw = otCreditMinutes(earlyRaw, policy);
       earlyBlocked = dayMaxOtMin != null ? Math.min(earlyBlockedRaw, dayMaxOtMin) : earlyBlockedRaw;
     }
@@ -1007,12 +1021,14 @@ export function computeAttendanceForEmployee(
     if (hasForm('overtime_request') || (!policy.require_ot_form && timeOutRel > effectiveEnd)) {
       const otRaw = Math.max(0, timeOutRel - effectiveEnd);
       if (otRaw > 0 || earlyBlocked > 0) {
-        const otBlockedRaw = otCreditMinutes(otRaw, policy);
+        const otBlockedRaw = otTiming === 'Early OT' ? 0 : otCreditMinutes(otRaw, policy);
         // dayMaxOtMin (policy cap, or a linked Overtime Request's own approved_hours override —
         // see above; null = no cap) caps how much of it is actually PAID, early OT included —
         // same as unauthorized OT, hours worked past the cap are simply uncompensated presence,
         // not converted into undertime.
         const otBlocked = dayMaxOtMin != null ? Math.min(otBlockedRaw, Math.max(0, dayMaxOtMin - earlyBlocked)) : otBlockedRaw;
+        otEarlyHours = earlyBlocked / 60;
+        otAfterHours = otBlocked / 60;
         if (otBlocked > 0) paidSpanEnd = Math.min(timeOutRel, effectiveEnd + otBlocked);
         if (otBlocked + earlyBlocked > 0) {
           otHours = (otBlocked + earlyBlocked) / 60;

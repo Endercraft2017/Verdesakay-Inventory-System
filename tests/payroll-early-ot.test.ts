@@ -24,6 +24,21 @@ function day(overrides: Partial<AttendanceDay>): AttendanceDay {
 const run = (d: AttendanceDay, policy: PayrollPolicy = POLICY) => computeAttendanceForEmployee([d], DAILY_RATE, policy);
 
 describe('early OT', () => {
+  it('offers OT, Early OT, and Both while preserving the legacy checkbox', () => {
+    const policy = { ...POLICY, ot_unit: '30min' as const, max_ot_hours: 2 };
+    const driver = day({ time_in: '06:22', time_out: '19:00' });
+    const withTiming = (ot_timing: string, hours_basis: PayrollPolicy['hours_basis'] = 'fixed') =>
+      run({ ...driver, linkedForms: ot({ ot_timing, approved_hours: 3 }) }, { ...policy, hours_basis });
+    expect(withTiming('OT').days[0]).toMatchObject({ ot_hours: 1, ot_early_hours: 0, ot_after_hours: 1 });
+    expect(withTiming('Early OT').days[0]).toMatchObject({ ot_hours: 2.5, ot_early_hours: 2.5, ot_after_hours: 0 });
+    expect(withTiming('Both').days[0]).toMatchObject({ ot_hours: 3, ot_early_hours: 2.5, ot_after_hours: 0.5 });
+    expect(withTiming('Both').overtime_pay).toBeCloseTo(3 * 125, 6);
+    expect(run({ ...driver, linkedForms: ot({ early_ot: 'Yes', approved_hours: 3 }) }, policy).ot_hours).toBe(3);
+    expect(withTiming('OT', 'per_hour').ot_hours).toBe(1);
+    expect(withTiming('Early OT', 'per_hour').ot_hours).toBe(2.5);
+    expect(withTiming('Both', 'per_hour').ot_hours).toBe(3);
+  });
+
   it('pays the time before the shift start when the form has Early OT ticked', () => {
     const r = run(day({ linkedForms: ot({ early_ot: true }) }));
     expect(r.ot_hours).toBe(4); // 06:00-09:00 early + 18:00-19:00 after

@@ -4094,6 +4094,7 @@ function seedHrRequestForms(): void {
         // Informational only — actual OT hours/pay are computed from the day's real clock-in/
         // out against the shift (src/hr-payroll-compute.ts); this form only authorizes it.
         { key: 'hours_estimate', label: 'Estimated OT Hours', type: 'number', required: false, options: [], default: '' },
+        { key: 'ot_timing', label: 'OT Timing (OT = after shift; Early OT = before shift)', type: 'select', required: true, options: ['OT', 'Early OT', 'Both'], default: 'OT' },
         area('reason', 'Reason', true),
         // Read directly by the compute engine as a per-day override of PayrollPolicy.max_ot_hours
         // — leave blank for a routine request (policy cap applies as usual); filled in by
@@ -4101,10 +4102,6 @@ function seedHrRequestForms(): void {
         // at 2h/day but the boss okayed 4h today), this day's OT is capped at THIS number
         // instead. Doesn't lower the cap if set below policy.max_ot_hours — only ever raises it.
         { key: 'approved_hours', label: 'Approved OT Hours (overrides the daily OT cap for this day only — leave blank to use the policy max)', type: 'number', required: false, options: [], default: '' },
-        // Read by the compute engine: ticked, time before the shift start counts as OT too when
-        // the time-in was 1 h+ early (EARLY_OT_MIN_MINUTES), sharing the day's OT cap with
-        // after-shift OT. The Daily Time grid only offers it on such a day.
-        { key: 'early_ot', label: 'Early OT — count the time before the shift start (timed in 1 hour or more early)', type: 'checkbox', required: false, options: [], default: '' },
       ],
     },
     {
@@ -4275,15 +4272,26 @@ function seedHrRequestForms(): void {
         }
       } catch { /* leave as-is if the stored fields are somehow unparseable */ }
     }
-    // Same self-correcting touch-up for an install that already had overtime_request seeded
-    // before approved_hours (the per-day OT-cap override) or early_ot (Early OT) existed.
+    // Replace the old Early OT checkbox with a three-way timing choice on existing forms.
+    // Historic record data remains untouched; payroll still reads the old checkbox value.
     if (f.slug === 'overtime_request') {
       try {
         const fields = JSON.parse(existing.fields) as { key: string }[];
-        const missing = (f.fields as { key: string }[])
-          .filter((fl) => (fl.key === 'approved_hours' || fl.key === 'early_ot') && !fields.some((x) => x.key === fl.key));
-        if (missing.length) {
-          fields.push(...missing);
+        const defaults = f.fields as { key: string }[];
+        const timing = defaults.find((fl) => fl.key === 'ot_timing');
+        let changed = false;
+        const oldIndex = fields.findIndex((fl) => fl.key === 'early_ot');
+        if (oldIndex >= 0) { fields.splice(oldIndex, 1); changed = true; }
+        if (timing && !fields.some((fl) => fl.key === 'ot_timing')) {
+          const reasonIndex = fields.findIndex((fl) => fl.key === 'reason');
+          fields.splice(reasonIndex >= 0 ? reasonIndex : fields.length, 0, timing);
+          changed = true;
+        }
+        if (!fields.some((fl) => fl.key === 'approved_hours')) {
+          const approved = defaults.find((fl) => fl.key === 'approved_hours');
+          if (approved) { fields.push(approved); changed = true; }
+        }
+        if (changed) {
           db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
         }
       } catch { /* leave as-is if the stored fields are somehow unparseable */ }
